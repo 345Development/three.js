@@ -9,6 +9,68 @@
 	(global = typeof globalThis !== 'undefined' ? globalThis : global || self, factory(global.THREE = {}));
 })(this, (function (exports) { 'use strict';
 
+	// const PROXY = {
+	// 	CTOR: function (cls) {
+	// 		return function () {
+	// 			console.log("proxy direct class " + cls.name);
+	// 			//var args = Array.prototype.slice.call(arguments, 1);
+	// 			var inst = new cls(...arguments);
+	// 			return inst;
+	// 		};
+	// 	},
+	// 	// internal create
+	// 	Owned: function (cls, ctxt) {
+	// 		return function (owner) {
+	// 			console.log("proxy owned class"); //+cls.name+" owned by "+ctxt,owner);
+	// 			var args = Array.prototype.slice.call(arguments, 0);
+	// 			var inst = new cls(...args);
+	// 			return inst;
+	// 		};
+	// 	},
+	// };
+	const PROXY = {
+		// // called during class instantiate; we take over process
+		// ctor: function(self,args){
+		// 	const inst = self.__constructor.apply(self,args);
+		// 	return inst;
+		// },
+		disposeFn: function () {
+			// call the original dispose 
+			this.__dispose?.();
+		},
+		createFn: function (cls, ctxt) {
+			return function () {
+				console.log("proxy create " + cls.name); //+cls.name+" owned by "+ctxt,owner);
+
+				var args = Array.prototype.slice.call(arguments, 0);
+				var inst = new cls(...args);
+				return inst;
+			};
+		},
+		wrap: function (cls, args) {
+			console.log("wrapped create " + cls.name);
+			let inst = new cls(...args);
+			return inst;
+		},
+		internal: function (info) {
+			var args = Array.prototype.slice.call(arguments, 1);
+			console.log("internal create " + info.c.name);
+			let inst = new info.c(...args);
+			return inst;
+		},
+		init: function (cls) {
+			const pt = cls.prototype;
+			if (pt.dispose === PROXY.disposeFn) return;
+
+			if (pt.__dispose) {
+				// we have already messed with dispose (from a base class)
+				pt.__dispose = pt.dispose;
+			} else if (pt.dispose) pt.__dispose = pt.dispose;
+
+			pt.dispose = PROXY.disposeFn;
+		}
+	}; // // temporary constructor
+
 	const REVISION = '144';
 	const MOUSE = {
 		LEFT: 0,
@@ -195,27 +257,6 @@
 	const GLSL1 = '100';
 	const GLSL3 = '300 es';
 	const _SRGBAFormat = 1035; // fallback for WebGL 1
-
-	const PROXY = {
-		CTOR: function (cls) {
-			return function () {
-				console.log("proxy direct class " + cls.name); //var args = Array.prototype.slice.call(arguments, 1);
-
-				var inst = new cls(...arguments);
-				return inst;
-			};
-		},
-		// internal create
-		Owned: function (cls, ctxt) {
-			return function (owner) {
-				console.log("proxy owned class"); //+cls.name+" owned by "+ctxt,owner);
-
-				var args = Array.prototype.slice.call(arguments, 0);
-				var inst = new cls(...args);
-				return inst;
-			};
-		}
-	}; // // temporary constructor
 
 	/**
 	 * https://github.com/mrdoob/eventdispatcher.js/
@@ -1908,10 +1949,9 @@
 	}
 
 	// #PROXY1.0.0 Classes:Texture Uses:
-	const Texture = PROXY.CTOR(orig_Texture, "Texture");
 	let textureId = 0;
 
-	class orig_Texture extends EventDispatcher {
+	class Texture extends EventDispatcher {
 		constructor(image = Texture.DEFAULT_IMAGE, mapping = Texture.DEFAULT_MAPPING, wrapS = ClampToEdgeWrapping, wrapT = ClampToEdgeWrapping, magFilter = LinearFilter, minFilter = LinearMipmapLinearFilter, format = RGBAFormat, type = UnsignedByteType, anisotropy = 1, encoding = LinearEncoding) {
 			super();
 			this.isTexture = true;
@@ -2111,6 +2151,10 @@
 
 	Texture.DEFAULT_IMAGE = null;
 	Texture.DEFAULT_MAPPING = UVMapping;
+	function wrap_Texture() {
+		return PROXY.wrap(Texture, arguments);
+	}
+	PROXY.init(Texture);
 
 	class Vector4 {
 		constructor(x = 0, y = 0, z = 0, w = 1) {
@@ -2592,15 +2636,13 @@
 	}
 
 	// #PROXY1.0.0 Classes:WebGLRenderTarget Uses:Texture
-	const WebGLRenderTarget = PROXY.CTOR(orig_WebGLRenderTarget, "WebGLRenderTarget");
-	const proxy_Texture_in_WebGLRenderTarget = PROXY.Owned(Texture, "WebGLRenderTarget");
 	/*
 	 In options, we can specify:
 	 * Texture parameters for an auto-generated target texture
 	 * depthBuffer/stencilBuffer: Booleans to indicate if we should generate these buffers
 	*/
 
-	class orig_WebGLRenderTarget extends EventDispatcher {
+	class WebGLRenderTarget extends EventDispatcher {
 		constructor(width, height, options = {}) {
 			super();
 			this.isWebGLRenderTarget = true;
@@ -2615,7 +2657,10 @@
 				height: height,
 				depth: 1
 			};
-			this.texture = new proxy_Texture_in_WebGLRenderTarget(image, options.mapping, options.wrapS, options.wrapT, options.magFilter, options.minFilter, options.format, options.type, options.anisotropy, options.encoding);
+			this.texture = new PROXY.internal({
+				c: Texture,
+				w: 'WebGLRenderTarget'
+			}, image, options.mapping, options.wrapS, options.wrapT, options.magFilter, options.minFilter, options.format, options.type, options.anisotropy, options.encoding);
 			this.texture.isRenderTargetTexture = true;
 			this.texture.flipY = false;
 			this.texture.generateMipmaps = options.generateMipmaps !== undefined ? options.generateMipmaps : false;
@@ -2671,10 +2716,14 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:DataArrayTexture Uses:
-	const DataArrayTexture = PROXY.CTOR(orig_DataArrayTexture, "DataArrayTexture");
+	function wrap_WebGLRenderTarget() {
+		return PROXY.wrap(WebGLRenderTarget, arguments);
+	}
+	PROXY.init(WebGLRenderTarget);
 
-	class orig_DataArrayTexture extends Texture {
+	// #PROXY1.0.0 Classes:DataArrayTexture Uses:
+
+	class DataArrayTexture extends Texture {
 		constructor(data = null, width = 1, height = 1, depth = 1) {
 			super(null);
 			this.isDataArrayTexture = true;
@@ -2694,25 +2743,35 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:WebGLArrayRenderTarget Uses:DataArrayTexture
-	const WebGLArrayRenderTarget = PROXY.CTOR(orig_WebGLArrayRenderTarget, "WebGLArrayRenderTarget");
-	const proxy_DataArrayTexture_in_WebGLArrayRenderTarget = PROXY.Owned(DataArrayTexture, "WebGLArrayRenderTarget");
+	function wrap_DataArrayTexture() {
+		return PROXY.wrap(DataArrayTexture, arguments);
+	}
+	PROXY.init(DataArrayTexture);
 
-	class orig_WebGLArrayRenderTarget extends WebGLRenderTarget {
+	// #PROXY1.0.0 Classes:WebGLArrayRenderTarget Uses:DataArrayTexture
+
+	class WebGLArrayRenderTarget extends WebGLRenderTarget {
 		constructor(width, height, depth) {
 			super(width, height);
 			this.isWebGLArrayRenderTarget = true;
 			this.depth = depth;
-			this.texture = new proxy_DataArrayTexture_in_WebGLArrayRenderTarget(null, width, height, depth);
+			this.texture = new PROXY.internal({
+				c: DataArrayTexture,
+				w: 'WebGLArrayRenderTarget'
+			}, null, width, height, depth);
 			this.texture.isRenderTargetTexture = true;
 		}
 
 	}
 
-	// #PROXY1.0.0 Classes:Data3DTexture Uses:
-	const Data3DTexture = PROXY.CTOR(orig_Data3DTexture, "Data3DTexture");
+	function wrap_WebGLArrayRenderTarget() {
+		return PROXY.wrap(WebGLArrayRenderTarget, arguments);
+	}
+	PROXY.init(WebGLArrayRenderTarget);
 
-	class orig_Data3DTexture extends Texture {
+	// #PROXY1.0.0 Classes:Data3DTexture Uses:
+
+	class Data3DTexture extends Texture {
 		constructor(data = null, width = 1, height = 1, depth = 1) {
 			// We're going to add .setXXX() methods for setting properties later.
 			// Users can still set in DataTexture3D directly.
@@ -2739,25 +2798,35 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:WebGL3DRenderTarget Uses:Data3DTexture
-	const WebGL3DRenderTarget = PROXY.CTOR(orig_WebGL3DRenderTarget, "WebGL3DRenderTarget");
-	const proxy_Data3DTexture_in_WebGL3DRenderTarget = PROXY.Owned(Data3DTexture, "WebGL3DRenderTarget");
+	function wrap_Data3DTexture() {
+		return PROXY.wrap(Data3DTexture, arguments);
+	}
+	PROXY.init(Data3DTexture);
 
-	class orig_WebGL3DRenderTarget extends WebGLRenderTarget {
+	// #PROXY1.0.0 Classes:WebGL3DRenderTarget Uses:Data3DTexture
+
+	class WebGL3DRenderTarget extends WebGLRenderTarget {
 		constructor(width, height, depth) {
 			super(width, height);
 			this.isWebGL3DRenderTarget = true;
 			this.depth = depth;
-			this.texture = new proxy_Data3DTexture_in_WebGL3DRenderTarget(null, width, height, depth);
+			this.texture = new PROXY.internal({
+				c: Data3DTexture,
+				w: 'WebGL3DRenderTarget'
+			}, null, width, height, depth);
 			this.texture.isRenderTargetTexture = true;
 		}
 
 	}
 
-	// #PROXY1.0.0 Classes:WebGLMultipleRenderTargets Uses:
-	const WebGLMultipleRenderTargets = PROXY.CTOR(orig_WebGLMultipleRenderTargets, "WebGLMultipleRenderTargets");
+	function wrap_WebGL3DRenderTarget() {
+		return PROXY.wrap(WebGL3DRenderTarget, arguments);
+	}
+	PROXY.init(WebGL3DRenderTarget);
 
-	class orig_WebGLMultipleRenderTargets extends WebGLRenderTarget {
+	// #PROXY1.0.0 Classes:WebGLMultipleRenderTargets Uses:
+
+	class WebGLMultipleRenderTargets extends WebGLRenderTarget {
 		constructor(width, height, count, options = {}) {
 			super(width, height, options);
 			this.isWebGLMultipleRenderTargets = true;
@@ -2811,6 +2880,11 @@
 		}
 
 	}
+
+	function wrap_WebGLMultipleRenderTargets() {
+		return PROXY.wrap(WebGLMultipleRenderTargets, arguments);
+	}
+	PROXY.init(WebGLMultipleRenderTargets);
 
 	class Quaternion {
 		constructor(x = 0, y = 0, z = 0, w = 1) {
@@ -5783,7 +5857,6 @@
 	}
 
 	// #PROXY1.0.0 Classes:Object3D Uses:
-	const Object3D = PROXY.CTOR(orig_Object3D, "Object3D");
 	let _object3DId = 0;
 
 	const _v1$4 = /*@__PURE__*/new Vector3();
@@ -5813,7 +5886,7 @@
 		type: 'removed'
 	};
 
-	class orig_Object3D extends EventDispatcher {
+	class Object3D extends EventDispatcher {
 		constructor() {
 			super();
 			this.isObject3D = true;
@@ -6442,6 +6515,10 @@
 	Object3D.DefaultUp = /*@__PURE__*/new Vector3(0, 1, 0);
 	Object3D.DefaultMatrixAutoUpdate = true;
 	Object3D.DefaultMatrixWorldAutoUpdate = true;
+	function wrap_Object3D() {
+		return PROXY.wrap(Object3D, arguments);
+	}
+	PROXY.init(Object3D);
 
 	const _v0$1 = /*@__PURE__*/new Vector3();
 
@@ -6702,10 +6779,9 @@
 	}
 
 	// #PROXY1.0.0 Classes:Material Uses:
-	const Material = PROXY.CTOR(orig_Material, "Material");
 	let materialId = 0;
 
-	class orig_Material extends EventDispatcher {
+	class Material extends EventDispatcher {
 		constructor() {
 			super();
 			this.isMaterial = true;
@@ -7061,10 +7137,14 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:MeshBasicMaterial Uses:
-	const MeshBasicMaterial = PROXY.CTOR(orig_MeshBasicMaterial, "MeshBasicMaterial");
+	function wrap_Material() {
+		return PROXY.wrap(Material, arguments);
+	}
+	PROXY.init(Material);
 
-	class orig_MeshBasicMaterial extends Material {
+	// #PROXY1.0.0 Classes:MeshBasicMaterial Uses:
+
+	class MeshBasicMaterial extends Material {
 		constructor(parameters) {
 			super();
 			this.isMeshBasicMaterial = true;
@@ -7113,6 +7193,11 @@
 		}
 
 	}
+
+	function wrap_MeshBasicMaterial() {
+		return PROXY.wrap(MeshBasicMaterial, arguments);
+	}
+	PROXY.init(MeshBasicMaterial);
 
 	const _vector$9 = /*@__PURE__*/new Vector3();
 
@@ -7446,14 +7531,14 @@
 	} //
 
 	// #PROXY1.0.0 Classes:BufferGeometry Uses:Object3D,BufferGeometry
-	const BufferGeometry = PROXY.CTOR(orig_BufferGeometry, "BufferGeometry");
-	const proxy_Object3D_in_STATIC = PROXY.Owned(Object3D, "STATIC");
-	const proxy_BufferGeometry_in_BufferGeometry = PROXY.Owned(BufferGeometry, "BufferGeometry");
 	let _id$1 = 0;
 
 	const _m1 = /*@__PURE__*/new Matrix4();
 
-	const _obj = /*@__PURE__*/new proxy_Object3D_in_STATIC();
+	const _obj = /*@__PURE__*/new PROXY.internal({
+		c: Object3D,
+		w: 'STATIC'
+	});
 
 	const _offset = /*@__PURE__*/new Vector3();
 
@@ -7463,7 +7548,7 @@
 
 	const _vector$8 = /*@__PURE__*/new Vector3();
 
-	class orig_BufferGeometry extends EventDispatcher {
+	class BufferGeometry extends EventDispatcher {
 		constructor() {
 			super();
 			this.isBufferGeometry = true;
@@ -8005,7 +8090,10 @@
 				return this;
 			}
 
-			const geometry2 = new proxy_BufferGeometry_in_BufferGeometry();
+			const geometry2 = new PROXY.internal({
+				c: BufferGeometry,
+				w: 'BufferGeometry'
+			});
 			const indices = this.index.array;
 			const attributes = this.attributes; // attributes
 
@@ -8214,10 +8302,12 @@
 
 	}
 
+	function wrap_BufferGeometry() {
+		return PROXY.wrap(BufferGeometry, arguments);
+	}
+	PROXY.init(BufferGeometry);
+
 	// #PROXY1.0.0 Classes:Mesh Uses:BufferGeometry,MeshBasicMaterial
-	const Mesh = PROXY.CTOR(orig_Mesh, "Mesh");
-	const proxy_BufferGeometry_in_Mesh = PROXY.Owned(BufferGeometry, "Mesh");
-	const proxy_MeshBasicMaterial_in_Mesh = PROXY.Owned(MeshBasicMaterial, "Mesh");
 
 	const _inverseMatrix$2 = /*@__PURE__*/new Matrix4();
 
@@ -8253,8 +8343,14 @@
 
 	const _intersectionPointWorld = /*@__PURE__*/new Vector3();
 
-	class orig_Mesh extends Object3D {
-		constructor(geometry = new proxy_BufferGeometry_in_Mesh(), material = new proxy_MeshBasicMaterial_in_Mesh()) {
+	class Mesh extends Object3D {
+		constructor(geometry = new PROXY.internal({
+			c: BufferGeometry,
+			w: 'Mesh'
+		}), material = new PROXY.internal({
+			c: MeshBasicMaterial,
+			w: 'Mesh'
+		})) {
 			super();
 			this.isMesh = true;
 			this.type = 'Mesh';
@@ -8534,11 +8630,14 @@
 		return intersection;
 	}
 
-	// #PROXY1.0.0 Classes:BoxGeometry Uses:BoxGeometry
-	const BoxGeometry = PROXY.CTOR(orig_BoxGeometry, "BoxGeometry");
-	const proxy_BoxGeometry_in_BoxGeometry = PROXY.Owned(BoxGeometry, "BoxGeometry");
+	function wrap_Mesh() {
+		return PROXY.wrap(Mesh, arguments);
+	}
+	PROXY.init(Mesh);
 
-	class orig_BoxGeometry extends BufferGeometry {
+	// #PROXY1.0.0 Classes:BoxGeometry Uses:BoxGeometry
+
+	class BoxGeometry extends BufferGeometry {
 		constructor(width = 1, height = 1, depth = 1, widthSegments = 1, heightSegments = 1, depthSegments = 1) {
 			super();
 			this.type = 'BoxGeometry';
@@ -8647,10 +8746,18 @@
 		}
 
 		static fromJSON(data) {
-			return new proxy_BoxGeometry_in_BoxGeometry(data.width, data.height, data.depth, data.widthSegments, data.heightSegments, data.depthSegments);
+			return new PROXY.internal({
+				c: BoxGeometry,
+				w: 'BoxGeometry'
+			}, data.width, data.height, data.depth, data.widthSegments, data.heightSegments, data.depthSegments);
 		}
 
 	}
+
+	function wrap_BoxGeometry() {
+		return PROXY.wrap(BoxGeometry, arguments);
+	}
+	PROXY.init(BoxGeometry);
 
 	/**
 	 * Uniform Utilities
@@ -8709,9 +8816,8 @@
 	var default_fragment = "void main() {\n\tgl_FragColor = vec4( 1.0, 0.0, 0.0, 1.0 );\n}";
 
 	// #PROXY1.0.0 Classes:ShaderMaterial Uses:
-	const ShaderMaterial = PROXY.CTOR(orig_ShaderMaterial, "ShaderMaterial");
 
-	class orig_ShaderMaterial extends Material {
+	class ShaderMaterial extends Material {
 		constructor(parameters) {
 			super();
 			this.isShaderMaterial = true;
@@ -8839,10 +8945,14 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:Camera Uses:
-	const Camera = PROXY.CTOR(orig_Camera, "Camera");
+	function wrap_ShaderMaterial() {
+		return PROXY.wrap(ShaderMaterial, arguments);
+	}
+	PROXY.init(ShaderMaterial);
 
-	class orig_Camera extends Object3D {
+	// #PROXY1.0.0 Classes:Camera Uses:
+
+	class Camera extends Object3D {
 		constructor() {
 			super();
 			this.isCamera = true;
@@ -8882,10 +8992,14 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:PerspectiveCamera Uses:
-	const PerspectiveCamera = PROXY.CTOR(orig_PerspectiveCamera, "PerspectiveCamera");
+	function wrap_Camera() {
+		return PROXY.wrap(Camera, arguments);
+	}
+	PROXY.init(Camera);
 
-	class orig_PerspectiveCamera extends Camera {
+	// #PROXY1.0.0 Classes:PerspectiveCamera Uses:
+
+	class PerspectiveCamera extends Camera {
 		constructor(fov = 50, aspect = 1, near = 0.1, far = 2000) {
 			super();
 			this.isPerspectiveCamera = true;
@@ -9065,43 +9179,64 @@
 
 	}
 
+	function wrap_PerspectiveCamera() {
+		return PROXY.wrap(PerspectiveCamera, arguments);
+	}
+	PROXY.init(PerspectiveCamera);
+
 	// #PROXY1.0.0 Classes:CubeCamera Uses:PerspectiveCamera
-	const CubeCamera = PROXY.CTOR(orig_CubeCamera, "CubeCamera");
-	const proxy_PerspectiveCamera_in_CubeCamera = PROXY.Owned(PerspectiveCamera, "CubeCamera");
 	const fov = 90,
 				aspect = 1;
 
-	class orig_CubeCamera extends Object3D {
+	class CubeCamera extends Object3D {
 		constructor(near, far, renderTarget) {
 			super();
 			this.type = 'CubeCamera';
 			this.renderTarget = renderTarget;
-			const cameraPX = new proxy_PerspectiveCamera_in_CubeCamera(fov, aspect, near, far);
+			const cameraPX = new PROXY.internal({
+				c: PerspectiveCamera,
+				w: 'CubeCamera'
+			}, fov, aspect, near, far);
 			cameraPX.layers = this.layers;
 			cameraPX.up.set(0, -1, 0);
 			cameraPX.lookAt(new Vector3(1, 0, 0));
 			this.add(cameraPX);
-			const cameraNX = new proxy_PerspectiveCamera_in_CubeCamera(fov, aspect, near, far);
+			const cameraNX = new PROXY.internal({
+				c: PerspectiveCamera,
+				w: 'CubeCamera'
+			}, fov, aspect, near, far);
 			cameraNX.layers = this.layers;
 			cameraNX.up.set(0, -1, 0);
 			cameraNX.lookAt(new Vector3(-1, 0, 0));
 			this.add(cameraNX);
-			const cameraPY = new proxy_PerspectiveCamera_in_CubeCamera(fov, aspect, near, far);
+			const cameraPY = new PROXY.internal({
+				c: PerspectiveCamera,
+				w: 'CubeCamera'
+			}, fov, aspect, near, far);
 			cameraPY.layers = this.layers;
 			cameraPY.up.set(0, 0, 1);
 			cameraPY.lookAt(new Vector3(0, 1, 0));
 			this.add(cameraPY);
-			const cameraNY = new proxy_PerspectiveCamera_in_CubeCamera(fov, aspect, near, far);
+			const cameraNY = new PROXY.internal({
+				c: PerspectiveCamera,
+				w: 'CubeCamera'
+			}, fov, aspect, near, far);
 			cameraNY.layers = this.layers;
 			cameraNY.up.set(0, 0, -1);
 			cameraNY.lookAt(new Vector3(0, -1, 0));
 			this.add(cameraNY);
-			const cameraPZ = new proxy_PerspectiveCamera_in_CubeCamera(fov, aspect, near, far);
+			const cameraPZ = new PROXY.internal({
+				c: PerspectiveCamera,
+				w: 'CubeCamera'
+			}, fov, aspect, near, far);
 			cameraPZ.layers = this.layers;
 			cameraPZ.up.set(0, -1, 0);
 			cameraPZ.lookAt(new Vector3(0, 0, 1));
 			this.add(cameraPZ);
-			const cameraNZ = new proxy_PerspectiveCamera_in_CubeCamera(fov, aspect, near, far);
+			const cameraNZ = new PROXY.internal({
+				c: PerspectiveCamera,
+				w: 'CubeCamera'
+			}, fov, aspect, near, far);
 			cameraNZ.layers = this.layers;
 			cameraNZ.up.set(0, -1, 0);
 			cameraNZ.lookAt(new Vector3(0, 0, -1));
@@ -9140,10 +9275,14 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:CubeTexture Uses:
-	const CubeTexture = PROXY.CTOR(orig_CubeTexture, "CubeTexture");
+	function wrap_CubeCamera() {
+		return PROXY.wrap(CubeCamera, arguments);
+	}
+	PROXY.init(CubeCamera);
 
-	class orig_CubeTexture extends Texture {
+	// #PROXY1.0.0 Classes:CubeTexture Uses:
+
+	class CubeTexture extends Texture {
 		constructor(images, mapping, wrapS, wrapT, magFilter, minFilter, format, type, anisotropy, encoding) {
 			images = images !== undefined ? images : [];
 			mapping = mapping !== undefined ? mapping : CubeReflectionMapping;
@@ -9162,15 +9301,14 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:WebGLCubeRenderTarget Uses:CubeTexture,BoxGeometry,ShaderMaterial,Mesh,CubeCamera
-	const WebGLCubeRenderTarget = PROXY.CTOR(orig_WebGLCubeRenderTarget, "WebGLCubeRenderTarget");
-	const proxy_CubeTexture_in_WebGLCubeRenderTarget = PROXY.Owned(CubeTexture, "WebGLCubeRenderTarget");
-	const proxy_BoxGeometry_in_WebGLCubeRenderTarget = PROXY.Owned(BoxGeometry, "WebGLCubeRenderTarget");
-	const proxy_ShaderMaterial_in_WebGLCubeRenderTarget = PROXY.Owned(ShaderMaterial, "WebGLCubeRenderTarget");
-	const proxy_Mesh_in_WebGLCubeRenderTarget = PROXY.Owned(Mesh, "WebGLCubeRenderTarget");
-	const proxy_CubeCamera_in_WebGLCubeRenderTarget = PROXY.Owned(CubeCamera, "WebGLCubeRenderTarget");
+	function wrap_CubeTexture() {
+		return PROXY.wrap(CubeTexture, arguments);
+	}
+	PROXY.init(CubeTexture);
 
-	class orig_WebGLCubeRenderTarget extends WebGLRenderTarget {
+	// #PROXY1.0.0 Classes:WebGLCubeRenderTarget Uses:CubeTexture,BoxGeometry,ShaderMaterial,Mesh,CubeCamera
+
+	class WebGLCubeRenderTarget extends WebGLRenderTarget {
 		constructor(size, options = {}) {
 			super(size, size, options);
 			this.isWebGLCubeRenderTarget = true;
@@ -9180,7 +9318,10 @@
 				depth: 1
 			};
 			const images = [image, image, image, image, image, image];
-			this.texture = new proxy_CubeTexture_in_WebGLCubeRenderTarget(images, options.mapping, options.wrapS, options.wrapT, options.magFilter, options.minFilter, options.format, options.type, options.anisotropy, options.encoding); // By convention -- likely based on the RenderMan spec from the 1990's -- cube maps are specified by WebGL (and three.js)
+			this.texture = new PROXY.internal({
+				c: CubeTexture,
+				w: 'WebGLCubeRenderTarget'
+			}, images, options.mapping, options.wrapS, options.wrapT, options.magFilter, options.minFilter, options.format, options.type, options.anisotropy, options.encoding); // By convention -- likely based on the RenderMan spec from the 1990's -- cube maps are specified by WebGL (and three.js)
 			// in a coordinate system in which positive-x is to the right when looking up the positive-z axis -- in other words,
 			// in a left-handed coordinate system. By continuing this convention, preexisting cube maps continued to render correctly.
 			// three.js uses a right-handed coordinate system. So environment maps used in three.js appear to have px and nx swapped
@@ -9246,8 +9387,14 @@
 				}
 			`
 			};
-			const geometry = new proxy_BoxGeometry_in_WebGLCubeRenderTarget(5, 5, 5);
-			const material = new proxy_ShaderMaterial_in_WebGLCubeRenderTarget({
+			const geometry = new PROXY.internal({
+				c: BoxGeometry,
+				w: 'WebGLCubeRenderTarget'
+			}, 5, 5, 5);
+			const material = new PROXY.internal({
+				c: ShaderMaterial,
+				w: 'WebGLCubeRenderTarget'
+			}, {
 				name: 'CubemapFromEquirect',
 				uniforms: cloneUniforms(shader.uniforms),
 				vertexShader: shader.vertexShader,
@@ -9256,11 +9403,17 @@
 				blending: NoBlending
 			});
 			material.uniforms.tEquirect.value = texture;
-			const mesh = new proxy_Mesh_in_WebGLCubeRenderTarget(geometry, material);
+			const mesh = new PROXY.internal({
+				c: Mesh,
+				w: 'WebGLCubeRenderTarget'
+			}, geometry, material);
 			const currentMinFilter = texture.minFilter; // Avoid blurred poles
 
 			if (texture.minFilter === LinearMipmapLinearFilter) texture.minFilter = LinearFilter;
-			const camera = new proxy_CubeCamera_in_WebGLCubeRenderTarget(1, 10, this);
+			const camera = new PROXY.internal({
+				c: CubeCamera,
+				w: 'WebGLCubeRenderTarget'
+			}, 1, 10, this);
 			camera.update(renderer, mesh);
 			texture.minFilter = currentMinFilter;
 			mesh.geometry.dispose();
@@ -9280,6 +9433,11 @@
 		}
 
 	}
+
+	function wrap_WebGLCubeRenderTarget() {
+		return PROXY.wrap(WebGLCubeRenderTarget, arguments);
+	}
+	PROXY.init(WebGLCubeRenderTarget);
 
 	const _vector1 = /*@__PURE__*/new Vector3();
 
@@ -9698,10 +9856,8 @@
 	}
 
 	// #PROXY1.0.0 Classes:PlaneGeometry Uses:PlaneGeometry
-	const PlaneGeometry = PROXY.CTOR(orig_PlaneGeometry, "PlaneGeometry");
-	const proxy_PlaneGeometry_in_PlaneGeometry = PROXY.Owned(PlaneGeometry, "PlaneGeometry");
 
-	class orig_PlaneGeometry extends BufferGeometry {
+	class PlaneGeometry extends BufferGeometry {
 		constructor(width = 1, height = 1, widthSegments = 1, heightSegments = 1) {
 			super();
 			this.type = 'PlaneGeometry';
@@ -9755,10 +9911,18 @@
 		}
 
 		static fromJSON(data) {
-			return new proxy_PlaneGeometry_in_PlaneGeometry(data.width, data.height, data.widthSegments, data.heightSegments);
+			return new PROXY.internal({
+				c: PlaneGeometry,
+				w: 'PlaneGeometry'
+			}, data.width, data.height, data.widthSegments, data.heightSegments);
 		}
 
 	}
+
+	function wrap_PlaneGeometry() {
+		return PROXY.wrap(PlaneGeometry, arguments);
+	}
+	PROXY.init(PlaneGeometry);
 
 	var alphamap_fragment = "#ifdef USE_ALPHAMAP\n\tdiffuseColor.a *= texture2D( alphaMap, vUv ).g;\n#endif";
 
@@ -10714,10 +10878,6 @@
 	};
 
 	// #PROXY1.0.0 Classes: Uses:Mesh,BoxGeometry,ShaderMaterial,PlaneGeometry
-	const proxy_Mesh_in_WebGLBackground = PROXY.Owned(Mesh, "WebGLBackground");
-	const proxy_BoxGeometry_in_WebGLBackground = PROXY.Owned(BoxGeometry, "WebGLBackground");
-	const proxy_ShaderMaterial_in_WebGLBackground = PROXY.Owned(ShaderMaterial, "WebGLBackground");
-	const proxy_PlaneGeometry_in_WebGLBackground = PROXY.Owned(PlaneGeometry, "WebGLBackground");
 
 	function WebGLBackground(renderer, cubemaps, state, objects, alpha, premultipliedAlpha) {
 		const clearColor = new Color(0x000000);
@@ -10758,7 +10918,16 @@
 
 			if (background && (background.isCubeTexture || background.mapping === CubeUVReflectionMapping)) {
 				if (boxMesh === undefined) {
-					boxMesh = new proxy_Mesh_in_WebGLBackground(new proxy_BoxGeometry_in_WebGLBackground(1, 1, 1), new proxy_ShaderMaterial_in_WebGLBackground({
+					boxMesh = new PROXY.internal({
+						c: Mesh,
+						w: 'WebGLBackground'
+					}, new PROXY.internal({
+						c: BoxGeometry,
+						w: 'WebGLBackground'
+					}, 1, 1, 1), new PROXY.internal({
+						c: ShaderMaterial,
+						w: 'WebGLBackground'
+					}, {
 						name: 'BackgroundCubeMaterial',
 						uniforms: cloneUniforms(ShaderLib.cube.uniforms),
 						vertexShader: ShaderLib.cube.vertexShader,
@@ -10799,7 +10968,16 @@
 				renderList.unshift(boxMesh, boxMesh.geometry, boxMesh.material, 0, 0, null);
 			} else if (background && background.isTexture) {
 				if (planeMesh === undefined) {
-					planeMesh = new proxy_Mesh_in_WebGLBackground(new proxy_PlaneGeometry_in_WebGLBackground(2, 2), new proxy_ShaderMaterial_in_WebGLBackground({
+					planeMesh = new PROXY.internal({
+						c: Mesh,
+						w: 'WebGLBackground'
+					}, new PROXY.internal({
+						c: PlaneGeometry,
+						w: 'WebGLBackground'
+					}, 2, 2), new PROXY.internal({
+						c: ShaderMaterial,
+						w: 'WebGLBackground'
+					}, {
 						name: 'BackgroundMaterial',
 						uniforms: cloneUniforms(ShaderLib.background.uniforms),
 						vertexShader: ShaderLib.background.vertexShader,
@@ -11508,7 +11686,6 @@
 	}
 
 	// #PROXY1.0.0 Classes: Uses:WebGLCubeRenderTarget
-	const proxy_WebGLCubeRenderTarget_in_WebGLCubeMaps = PROXY.Owned(WebGLCubeRenderTarget, "WebGLCubeMaps");
 
 	function WebGLCubeMaps(renderer) {
 		let cubemaps = new WeakMap();
@@ -11535,7 +11712,10 @@
 						const image = texture.image;
 
 						if (image && image.height > 0) {
-							const renderTarget = new proxy_WebGLCubeRenderTarget_in_WebGLCubeMaps(image.height / 2);
+							const renderTarget = new PROXY.internal({
+								c: WebGLCubeRenderTarget,
+								w: 'WebGLCubeMaps'
+							}, image.height / 2);
 							renderTarget.fromEquirectangularTexture(renderer, texture);
 							cubemaps.set(texture, renderTarget);
 							texture.addEventListener('dispose', onTextureDispose);
@@ -11573,9 +11753,8 @@
 	}
 
 	// #PROXY1.0.0 Classes:OrthographicCamera Uses:
-	const OrthographicCamera = PROXY.CTOR(orig_OrthographicCamera, "OrthographicCamera");
 
-	class orig_OrthographicCamera extends Camera {
+	class OrthographicCamera extends Camera {
 		constructor(left = -1, right = 1, top = 1, bottom = -1, near = 0.1, far = 2000) {
 			super();
 			this.isOrthographicCamera = true;
@@ -11673,16 +11852,12 @@
 
 	}
 
+	function wrap_OrthographicCamera() {
+		return PROXY.wrap(OrthographicCamera, arguments);
+	}
+	PROXY.init(OrthographicCamera);
+
 	// #PROXY1.0.0 Classes:PMREMGenerator Uses:OrthographicCamera,Mesh,PerspectiveCamera,MeshBasicMaterial,BoxGeometry,BufferGeometry,WebGLRenderTarget,ShaderMaterial
-	const PMREMGenerator = PROXY.CTOR(orig_PMREMGenerator, "PMREMGenerator");
-	const proxy_OrthographicCamera_in_STATIC = PROXY.Owned(OrthographicCamera, "STATIC");
-	const proxy_Mesh_in_PMREMGenerator = PROXY.Owned(Mesh, "PMREMGenerator");
-	const proxy_PerspectiveCamera_in_PMREMGenerator = PROXY.Owned(PerspectiveCamera, "PMREMGenerator");
-	const proxy_MeshBasicMaterial_in_PMREMGenerator = PROXY.Owned(MeshBasicMaterial, "PMREMGenerator");
-	const proxy_BoxGeometry_in_PMREMGenerator = PROXY.Owned(BoxGeometry, "PMREMGenerator");
-	const proxy_BufferGeometry_in_PMREMGenerator = PROXY.Owned(BufferGeometry, "PMREMGenerator");
-	const proxy_WebGLRenderTarget_in_PMREMGenerator = PROXY.Owned(WebGLRenderTarget, "PMREMGenerator");
-	const proxy_ShaderMaterial_in_PMREMGenerator = PROXY.Owned(ShaderMaterial, "PMREMGenerator");
 	const LOD_MIN = 4; // The standard deviations (radians) associated with the extra mips. These are
 	// chosen to approximate a Trowbridge-Reitz distribution function times the
 	// geometric shadowing function. These sigma values squared must match the
@@ -11693,7 +11868,10 @@
 
 	const MAX_SAMPLES = 20;
 
-	const _flatCamera = /*@__PURE__*/new proxy_OrthographicCamera_in_STATIC();
+	const _flatCamera = /*@__PURE__*/new PROXY.internal({
+		c: OrthographicCamera,
+		w: 'STATIC'
+	});
 
 	const _clearColor = /*@__PURE__*/new Color();
 
@@ -11719,7 +11897,7 @@
 	 * https://drive.google.com/file/d/15y8r_UpKlU9SvV4ILb0C3qCPecS8pvLz/view
 	*/
 
-	class orig_PMREMGenerator {
+	class PMREMGenerator {
 		constructor(renderer) {
 			this._renderer = renderer;
 			this._pingPongRenderTarget = null;
@@ -11904,7 +12082,10 @@
 		}
 
 		_compileMaterial(material) {
-			const tmpMesh = new proxy_Mesh_in_PMREMGenerator(this._lodPlanes[0], material);
+			const tmpMesh = new PROXY.internal({
+				c: Mesh,
+				w: 'PMREMGenerator'
+			}, this._lodPlanes[0], material);
 
 			this._renderer.compile(tmpMesh, _flatCamera);
 		}
@@ -11912,7 +12093,10 @@
 		_sceneToCubeUV(scene, near, far, cubeUVRenderTarget) {
 			const fov = 90;
 			const aspect = 1;
-			const cubeCamera = new proxy_PerspectiveCamera_in_PMREMGenerator(fov, aspect, near, far);
+			const cubeCamera = new PROXY.internal({
+				c: PerspectiveCamera,
+				w: 'PMREMGenerator'
+			}, fov, aspect, near, far);
 			const upSign = [1, -1, 1, 1, 1, 1];
 			const forwardSign = [1, 1, 1, -1, -1, -1];
 			const renderer = this._renderer;
@@ -11921,13 +12105,22 @@
 			renderer.getClearColor(_clearColor);
 			renderer.toneMapping = NoToneMapping;
 			renderer.autoClear = false;
-			const backgroundMaterial = new proxy_MeshBasicMaterial_in_PMREMGenerator({
+			const backgroundMaterial = new PROXY.internal({
+				c: MeshBasicMaterial,
+				w: 'PMREMGenerator'
+			}, {
 				name: 'PMREM.Background',
 				side: BackSide,
 				depthWrite: false,
 				depthTest: false
 			});
-			const backgroundBox = new proxy_Mesh_in_PMREMGenerator(new proxy_BoxGeometry_in_PMREMGenerator(), backgroundMaterial);
+			const backgroundBox = new PROXY.internal({
+				c: Mesh,
+				w: 'PMREMGenerator'
+			}, new PROXY.internal({
+				c: BoxGeometry,
+				w: 'PMREMGenerator'
+			}), backgroundMaterial);
 			let useSolidColor = false;
 			const background = scene.background;
 
@@ -11993,7 +12186,10 @@
 			}
 
 			const material = isCubeTexture ? this._cubemapMaterial : this._equirectMaterial;
-			const mesh = new proxy_Mesh_in_PMREMGenerator(this._lodPlanes[0], material);
+			const mesh = new PROXY.internal({
+				c: Mesh,
+				w: 'PMREMGenerator'
+			}, this._lodPlanes[0], material);
 			const uniforms = material.uniforms;
 			uniforms['envMap'].value = texture;
 			const size = this._cubeSize;
@@ -12045,7 +12241,10 @@
 
 
 			const STANDARD_DEVIATIONS = 3;
-			const blurMesh = new proxy_Mesh_in_PMREMGenerator(this._lodPlanes[lodOut], blurMaterial);
+			const blurMesh = new PROXY.internal({
+				c: Mesh,
+				w: 'PMREMGenerator'
+			}, this._lodPlanes[lodOut], blurMaterial);
 			const blurUniforms = blurMaterial.uniforms;
 			const pixels = this._sizeLods[lodIn] - 1;
 			const radiansPerPixel = isFinite(sigmaRadians) ? Math.PI / (2 * pixels) : 2 * Math.PI / (2 * MAX_SAMPLES - 1);
@@ -12143,7 +12342,10 @@
 				faceIndex.set(fill, faceIndexSize * vertices * face);
 			}
 
-			const planes = new proxy_BufferGeometry_in_PMREMGenerator();
+			const planes = new PROXY.internal({
+				c: BufferGeometry,
+				w: 'PMREMGenerator'
+			});
 			planes.setAttribute('position', new BufferAttribute(position, positionSize));
 			planes.setAttribute('uv', new BufferAttribute(uv, uvSize));
 			planes.setAttribute('faceIndex', new BufferAttribute(faceIndex, faceIndexSize));
@@ -12162,7 +12364,10 @@
 	}
 
 	function _createRenderTarget(width, height, params) {
-		const cubeUVRenderTarget = new proxy_WebGLRenderTarget_in_PMREMGenerator(width, height, params);
+		const cubeUVRenderTarget = new PROXY.internal({
+			c: WebGLRenderTarget,
+			w: 'PMREMGenerator'
+		}, width, height, params);
 		cubeUVRenderTarget.texture.mapping = CubeUVReflectionMapping;
 		cubeUVRenderTarget.texture.name = 'PMREM.cubeUv';
 		cubeUVRenderTarget.scissorTest = true;
@@ -12177,7 +12382,10 @@
 	function _getBlurShader(lodMax, width, height) {
 		const weights = new Float32Array(MAX_SAMPLES);
 		const poleAxis = new Vector3(0, 1, 0);
-		const shaderMaterial = new proxy_ShaderMaterial_in_PMREMGenerator({
+		const shaderMaterial = new PROXY.internal({
+			c: ShaderMaterial,
+			w: 'PMREMGenerator'
+		}, {
 			name: 'SphericalGaussianBlur',
 			defines: {
 				'n': MAX_SAMPLES,
@@ -12280,7 +12488,10 @@
 	}
 
 	function _getEquirectMaterial() {
-		return new proxy_ShaderMaterial_in_PMREMGenerator({
+		return new PROXY.internal({
+			c: ShaderMaterial,
+			w: 'PMREMGenerator'
+		}, {
 			name: 'EquirectangularToCubeUV',
 			uniforms: {
 				'envMap': {
@@ -12317,7 +12528,10 @@
 	}
 
 	function _getCubemapMaterial() {
-		return new proxy_ShaderMaterial_in_PMREMGenerator({
+		return new PROXY.internal({
+			c: ShaderMaterial,
+			w: 'PMREMGenerator'
+		}, {
 			name: 'CubemapToCubeUV',
 			uniforms: {
 				'envMap': {
@@ -12415,8 +12629,12 @@
 		);
 	}
 
+	function wrap_PMREMGenerator() {
+		return PROXY.wrap(PMREMGenerator, arguments);
+	}
+	PROXY.init(PMREMGenerator);
+
 	// #PROXY1.0.0 Classes: Uses:PMREMGenerator
-	const proxy_PMREMGenerator_in_WebGLCubeUVMaps = PROXY.Owned(PMREMGenerator, "WebGLCubeUVMaps");
 
 	function WebGLCubeUVMaps(renderer) {
 		let cubeUVmaps = new WeakMap();
@@ -12432,7 +12650,10 @@
 					if (texture.isRenderTargetTexture && texture.needsPMREMUpdate === true) {
 						texture.needsPMREMUpdate = false;
 						let renderTarget = cubeUVmaps.get(texture);
-						if (pmremGenerator === null) pmremGenerator = new proxy_PMREMGenerator_in_WebGLCubeUVMaps(renderer);
+						if (pmremGenerator === null) pmremGenerator = new PROXY.internal({
+							c: PMREMGenerator,
+							w: 'WebGLCubeUVMaps'
+						}, renderer);
 						renderTarget = isEquirectMap ? pmremGenerator.fromEquirectangular(texture, renderTarget) : pmremGenerator.fromCubemap(texture, renderTarget);
 						cubeUVmaps.set(texture, renderTarget);
 						return renderTarget.texture;
@@ -12443,7 +12664,10 @@
 							const image = texture.image;
 
 							if (isEquirectMap && image && image.height > 0 || isCubeMap && image && isCubeTextureComplete(image)) {
-								if (pmremGenerator === null) pmremGenerator = new proxy_PMREMGenerator_in_WebGLCubeUVMaps(renderer);
+								if (pmremGenerator === null) pmremGenerator = new PROXY.internal({
+									c: PMREMGenerator,
+									w: 'WebGLCubeUVMaps'
+								}, renderer);
 								const renderTarget = isEquirectMap ? pmremGenerator.fromEquirectangular(texture) : pmremGenerator.fromCubemap(texture);
 								cubeUVmaps.set(texture, renderTarget);
 								texture.addEventListener('dispose', onTextureDispose);
@@ -12801,7 +13025,6 @@
 	}
 
 	// #PROXY1.0.0 Classes: Uses:DataArrayTexture
-	const proxy_DataArrayTexture_in_WebGLMorphtargets = PROXY.Owned(DataArrayTexture, "WebGLMorphtargets");
 
 	function numericalSort(a, b) {
 		return a[0] - b[0];
@@ -12853,7 +13076,10 @@
 					}
 
 					const buffer = new Float32Array(width * height * 4 * morphTargetsCount);
-					const texture = new proxy_DataArrayTexture_in_WebGLMorphtargets(buffer, width, height, morphTargetsCount);
+					const texture = new PROXY.internal({
+						c: DataArrayTexture,
+						w: 'WebGLMorphtargets'
+					}, buffer, width, height, morphTargetsCount);
 					texture.type = FloatType;
 					texture.needsUpdate = true; // fill buffer
 
@@ -13052,14 +13278,22 @@
 	}
 
 	// #PROXY1.0.0 Classes:SingleUniform,PureArrayUniform,StructuredUniform,WebGLUniforms Uses:Texture,DataArrayTexture,Data3DTexture,CubeTexture
-	const proxy_Texture_in_WebGLUniforms = PROXY.Owned(Texture, "WebGLUniforms");
-	const proxy_DataArrayTexture_in_WebGLUniforms = PROXY.Owned(DataArrayTexture, "WebGLUniforms");
-	const proxy_Data3DTexture_in_WebGLUniforms = PROXY.Owned(Data3DTexture, "WebGLUniforms");
-	const proxy_CubeTexture_in_WebGLUniforms = PROXY.Owned(CubeTexture, "WebGLUniforms");
-	const emptyTexture = /*@__PURE__*/new proxy_Texture_in_WebGLUniforms();
-	const emptyArrayTexture = /*@__PURE__*/new proxy_DataArrayTexture_in_WebGLUniforms();
-	const empty3dTexture = /*@__PURE__*/new proxy_Data3DTexture_in_WebGLUniforms();
-	const emptyCubeTexture = /*@__PURE__*/new proxy_CubeTexture_in_WebGLUniforms(); // --- Utilities ---
+	const emptyTexture = /*@__PURE__*/new PROXY.internal({
+		c: Texture,
+		w: 'WebGLUniforms'
+	});
+	const emptyArrayTexture = /*@__PURE__*/new PROXY.internal({
+		c: DataArrayTexture,
+		w: 'WebGLUniforms'
+	});
+	const empty3dTexture = /*@__PURE__*/new PROXY.internal({
+		c: Data3DTexture,
+		w: 'WebGLUniforms'
+	});
+	const emptyCubeTexture = /*@__PURE__*/new PROXY.internal({
+		c: CubeTexture,
+		w: 'WebGLUniforms'
+	}); // --- Utilities ---
 	// Array Caches (provide typed arrays for temporary by size)
 
 	const arrayCacheF32 = [];
@@ -15382,9 +15616,8 @@
 	}
 
 	// #PROXY1.0.0 Classes:MeshDepthMaterial Uses:
-	const MeshDepthMaterial = PROXY.CTOR(orig_MeshDepthMaterial, "MeshDepthMaterial");
 
-	class orig_MeshDepthMaterial extends Material {
+	class MeshDepthMaterial extends Material {
 		constructor(parameters) {
 			super();
 			this.isMeshDepthMaterial = true;
@@ -15415,10 +15648,14 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:MeshDistanceMaterial Uses:
-	const MeshDistanceMaterial = PROXY.CTOR(orig_MeshDistanceMaterial, "MeshDistanceMaterial");
+	function wrap_MeshDepthMaterial() {
+		return PROXY.wrap(MeshDepthMaterial, arguments);
+	}
+	PROXY.init(MeshDepthMaterial);
 
-	class orig_MeshDistanceMaterial extends Material {
+	// #PROXY1.0.0 Classes:MeshDistanceMaterial Uses:
+
+	class MeshDistanceMaterial extends Material {
 		constructor(parameters) {
 			super();
 			this.isMeshDistanceMaterial = true;
@@ -15449,16 +15686,15 @@
 
 	}
 
+	function wrap_MeshDistanceMaterial() {
+		return PROXY.wrap(MeshDistanceMaterial, arguments);
+	}
+	PROXY.init(MeshDistanceMaterial);
+
 	const vertex = "void main() {\n\tgl_Position = vec4( position, 1.0 );\n}";
 	const fragment = "uniform sampler2D shadow_pass;\nuniform vec2 resolution;\nuniform float radius;\n#include <packing>\nvoid main() {\n\tconst float samples = float( VSM_SAMPLES );\n\tfloat mean = 0.0;\n\tfloat squared_mean = 0.0;\n\tfloat uvStride = samples <= 1.0 ? 0.0 : 2.0 / ( samples - 1.0 );\n\tfloat uvStart = samples <= 1.0 ? 0.0 : - 1.0;\n\tfor ( float i = 0.0; i < samples; i ++ ) {\n\t\tfloat uvOffset = uvStart + i * uvStride;\n\t\t#ifdef HORIZONTAL_PASS\n\t\t\tvec2 distribution = unpackRGBATo2Half( texture2D( shadow_pass, ( gl_FragCoord.xy + vec2( uvOffset, 0.0 ) * radius ) / resolution ) );\n\t\t\tmean += distribution.x;\n\t\t\tsquared_mean += distribution.y * distribution.y + distribution.x * distribution.x;\n\t\t#else\n\t\t\tfloat depth = unpackRGBAToDepth( texture2D( shadow_pass, ( gl_FragCoord.xy + vec2( 0.0, uvOffset ) * radius ) / resolution ) );\n\t\t\tmean += depth;\n\t\t\tsquared_mean += depth * depth;\n\t\t#endif\n\t}\n\tmean = mean / samples;\n\tsquared_mean = squared_mean / samples;\n\tfloat std_dev = sqrt( squared_mean - mean * mean );\n\tgl_FragColor = pack2HalfToRGBA( vec2( mean, std_dev ) );\n}";
 
 	// #PROXY1.0.0 Classes: Uses:MeshDepthMaterial,MeshDistanceMaterial,ShaderMaterial,BufferGeometry,Mesh,WebGLRenderTarget
-	const proxy_MeshDepthMaterial_in_WebGLShadowMap = PROXY.Owned(MeshDepthMaterial, "WebGLShadowMap");
-	const proxy_MeshDistanceMaterial_in_WebGLShadowMap = PROXY.Owned(MeshDistanceMaterial, "WebGLShadowMap");
-	const proxy_ShaderMaterial_in_WebGLShadowMap = PROXY.Owned(ShaderMaterial, "WebGLShadowMap");
-	const proxy_BufferGeometry_in_WebGLShadowMap = PROXY.Owned(BufferGeometry, "WebGLShadowMap");
-	const proxy_Mesh_in_WebGLShadowMap = PROXY.Owned(Mesh, "WebGLShadowMap");
-	const proxy_WebGLRenderTarget_in_WebGLShadowMap = PROXY.Owned(WebGLRenderTarget, "WebGLShadowMap");
 
 	function WebGLShadowMap(_renderer, _objects, _capabilities) {
 		let _frustum = new Frustum();
@@ -15466,10 +15702,16 @@
 		const _shadowMapSize = new Vector2(),
 					_viewportSize = new Vector2(),
 					_viewport = new Vector4(),
-					_depthMaterial = new proxy_MeshDepthMaterial_in_WebGLShadowMap({
+					_depthMaterial = new PROXY.internal({
+			c: MeshDepthMaterial,
+			w: 'WebGLShadowMap'
+		}, {
 			depthPacking: RGBADepthPacking
 		}),
-					_distanceMaterial = new proxy_MeshDistanceMaterial_in_WebGLShadowMap(),
+					_distanceMaterial = new PROXY.internal({
+			c: MeshDistanceMaterial,
+			w: 'WebGLShadowMap'
+		}),
 					_materialCache = {},
 					_maxTextureSize = _capabilities.maxTextureSize;
 
@@ -15478,7 +15720,10 @@
 			1: FrontSide,
 			2: DoubleSide
 		};
-		const shadowMaterialVertical = new proxy_ShaderMaterial_in_WebGLShadowMap({
+		const shadowMaterialVertical = new PROXY.internal({
+			c: ShaderMaterial,
+			w: 'WebGLShadowMap'
+		}, {
 			defines: {
 				VSM_SAMPLES: 8
 			},
@@ -15498,9 +15743,15 @@
 		});
 		const shadowMaterialHorizontal = shadowMaterialVertical.clone();
 		shadowMaterialHorizontal.defines.HORIZONTAL_PASS = 1;
-		const fullScreenTri = new proxy_BufferGeometry_in_WebGLShadowMap();
+		const fullScreenTri = new PROXY.internal({
+			c: BufferGeometry,
+			w: 'WebGLShadowMap'
+		});
 		fullScreenTri.setAttribute('position', new BufferAttribute(new Float32Array([-1, -1, 0.5, 3, -1, 0.5, -1, 3, 0.5]), 3));
-		const fullScreenMesh = new proxy_Mesh_in_WebGLShadowMap(fullScreenTri, shadowMaterialVertical);
+		const fullScreenMesh = new PROXY.internal({
+			c: Mesh,
+			w: 'WebGLShadowMap'
+		}, fullScreenTri, shadowMaterialVertical);
 		const scope = this;
 		this.enabled = false;
 		this.autoUpdate = true;
@@ -15567,7 +15818,10 @@
 						minFilter: NearestFilter,
 						magFilter: NearestFilter
 					} : {};
-					shadow.map = new proxy_WebGLRenderTarget_in_WebGLShadowMap(_shadowMapSize.x, _shadowMapSize.y, pars);
+					shadow.map = new PROXY.internal({
+						c: WebGLRenderTarget,
+						w: 'WebGLShadowMap'
+					}, _shadowMapSize.x, _shadowMapSize.y, pars);
 					shadow.map.texture.name = light.name + '.shadowMap';
 					shadow.camera.updateProjectionMatrix();
 				}
@@ -15614,7 +15868,10 @@
 			}
 
 			if (shadow.mapPass === null) {
-				shadow.mapPass = new proxy_WebGLRenderTarget_in_WebGLShadowMap(_shadowMapSize.x, _shadowMapSize.y);
+				shadow.mapPass = new PROXY.internal({
+					c: WebGLRenderTarget,
+					w: 'WebGLShadowMap'
+				}, _shadowMapSize.x, _shadowMapSize.y);
 			} // vertical pass
 
 
@@ -18056,9 +18313,8 @@
 	}
 
 	// #PROXY1.0.0 Classes:Group Uses:
-	const Group = PROXY.CTOR(orig_Group, "Group");
 
-	class orig_Group extends Object3D {
+	class Group extends Object3D {
 		constructor() {
 			super();
 			this.isGroup = true;
@@ -18067,8 +18323,12 @@
 
 	}
 
+	function wrap_Group() {
+		return PROXY.wrap(Group, arguments);
+	}
+	PROXY.init(Group);
+
 	// #PROXY1.0.0 Classes:WebXRController Uses:Group
-	const proxy_Group_in_WebXRController = PROXY.Owned(Group, "WebXRController");
 	const _moveEvent = {
 		type: 'move'
 	};
@@ -18082,7 +18342,10 @@
 
 		getHandSpace() {
 			if (this._hand === null) {
-				this._hand = new proxy_Group_in_WebXRController();
+				this._hand = new PROXY.internal({
+					c: Group,
+					w: 'WebXRController'
+				});
 				this._hand.matrixAutoUpdate = false;
 				this._hand.visible = false;
 				this._hand.joints = {};
@@ -18096,7 +18359,10 @@
 
 		getTargetRaySpace() {
 			if (this._targetRay === null) {
-				this._targetRay = new proxy_Group_in_WebXRController();
+				this._targetRay = new PROXY.internal({
+					c: Group,
+					w: 'WebXRController'
+				});
 				this._targetRay.matrixAutoUpdate = false;
 				this._targetRay.visible = false;
 				this._targetRay.hasLinearVelocity = false;
@@ -18110,7 +18376,10 @@
 
 		getGripSpace() {
 			if (this._grip === null) {
-				this._grip = new proxy_Group_in_WebXRController();
+				this._grip = new PROXY.internal({
+					c: Group,
+					w: 'WebXRController'
+				});
 				this._grip.matrixAutoUpdate = false;
 				this._grip.visible = false;
 				this._grip.hasLinearVelocity = false;
@@ -18177,7 +18446,10 @@
 
 						if (hand.joints[inputjoint.jointName] === undefined) {
 							// The transform of this joint will be updated with the joint pose on each frame
-							const joint = new proxy_Group_in_WebXRController();
+							const joint = new PROXY.internal({
+								c: Group,
+								w: 'WebXRController'
+							});
 							joint.matrixAutoUpdate = false;
 							joint.visible = false;
 							hand.joints[inputjoint.jointName] = joint; // ??
@@ -18292,9 +18564,8 @@
 	}
 
 	// #PROXY1.0.0 Classes:DepthTexture Uses:
-	const DepthTexture = PROXY.CTOR(orig_DepthTexture, "DepthTexture");
 
-	class orig_DepthTexture extends Texture {
+	class DepthTexture extends Texture {
 		constructor(width, height, type, mapping, wrapS, wrapT, magFilter, minFilter, anisotropy, format) {
 			format = format !== undefined ? format : DepthFormat;
 
@@ -18318,10 +18589,12 @@
 
 	}
 
+	function wrap_DepthTexture() {
+		return PROXY.wrap(DepthTexture, arguments);
+	}
+	PROXY.init(DepthTexture);
+
 	// #PROXY1.0.0 Classes:WebXRManager Uses:PerspectiveCamera,WebGLRenderTarget,DepthTexture
-	const proxy_PerspectiveCamera_in_WebXRManager = PROXY.Owned(PerspectiveCamera, "WebXRManager");
-	const proxy_WebGLRenderTarget_in_WebXRManager = PROXY.Owned(WebGLRenderTarget, "WebXRManager");
-	const proxy_DepthTexture_in_WebXRManager = PROXY.Owned(DepthTexture, "WebXRManager");
 
 	class WebXRManager extends EventDispatcher {
 		constructor(renderer, gl) {
@@ -18343,10 +18616,16 @@
 			const controllers = [];
 			const controllerInputSources = []; //
 
-			const cameraL = new proxy_PerspectiveCamera_in_WebXRManager();
+			const cameraL = new PROXY.internal({
+				c: PerspectiveCamera,
+				w: 'WebXRManager'
+			});
 			cameraL.layers.enable(1);
 			cameraL.viewport = new Vector4();
-			const cameraR = new proxy_PerspectiveCamera_in_WebXRManager();
+			const cameraR = new PROXY.internal({
+				c: PerspectiveCamera,
+				w: 'WebXRManager'
+			});
 			cameraR.layers.enable(2);
 			cameraR.viewport = new Vector4();
 			const cameras = [cameraL, cameraR];
@@ -18515,7 +18794,10 @@
 						session.updateRenderState({
 							baseLayer: glBaseLayer
 						});
-						newRenderTarget = new proxy_WebGLRenderTarget_in_WebXRManager(glBaseLayer.framebufferWidth, glBaseLayer.framebufferHeight, {
+						newRenderTarget = new PROXY.internal({
+							c: WebGLRenderTarget,
+							w: 'WebXRManager'
+						}, glBaseLayer.framebufferWidth, glBaseLayer.framebufferHeight, {
 							format: RGBAFormat,
 							type: UnsignedByteType,
 							encoding: renderer.outputEncoding,
@@ -18542,10 +18824,16 @@
 						session.updateRenderState({
 							layers: [glProjLayer]
 						});
-						newRenderTarget = new proxy_WebGLRenderTarget_in_WebXRManager(glProjLayer.textureWidth, glProjLayer.textureHeight, {
+						newRenderTarget = new PROXY.internal({
+							c: WebGLRenderTarget,
+							w: 'WebXRManager'
+						}, glProjLayer.textureWidth, glProjLayer.textureHeight, {
 							format: RGBAFormat,
 							type: UnsignedByteType,
-							depthTexture: new proxy_DepthTexture_in_WebXRManager(glProjLayer.textureWidth, glProjLayer.textureHeight, depthType, undefined, undefined, undefined, undefined, undefined, undefined, depthFormat),
+							depthTexture: new PROXY.internal({
+								c: DepthTexture,
+								w: 'WebXRManager'
+							}, glProjLayer.textureWidth, glProjLayer.textureHeight, depthType, undefined, undefined, undefined, undefined, undefined, undefined, depthFormat),
 							stencilBuffer: attributes.stencil,
 							encoding: renderer.outputEncoding,
 							samples: attributes.antialias ? 4 : 0
@@ -18788,7 +19076,10 @@
 						let camera = cameras[i];
 
 						if (camera === undefined) {
-							camera = new proxy_PerspectiveCamera_in_WebXRManager();
+							camera = new PROXY.internal({
+								c: PerspectiveCamera,
+								w: 'WebXRManager'
+							});
 							camera.layers.enable(i);
 							camera.viewport = new Vector4();
 							cameras[i] = camera;
@@ -19527,7 +19818,6 @@
 	}
 
 	// #PROXY1.0.0 Classes: Uses:WebGLRenderTarget
-	const proxy_WebGLRenderTarget_in_WebGLRenderer = PROXY.Owned(WebGLRenderTarget, "WebGLRenderer");
 
 	function createCanvasElement() {
 		const canvas = createElementNS('canvas');
@@ -20350,7 +20640,10 @@
 			const isWebGL2 = capabilities.isWebGL2;
 
 			if (_transmissionRenderTarget === null) {
-				_transmissionRenderTarget = new proxy_WebGLRenderTarget_in_WebGLRenderer(1, 1, {
+				_transmissionRenderTarget = new PROXY.internal({
+					c: WebGLRenderTarget,
+					w: 'WebGLRenderer'
+				}, 1, 1, {
 					generateMipmaps: true,
 					type: extensions.has('EXT_color_buffer_half_float') ? HalfFloatType : UnsignedByteType,
 					minFilter: LinearMipmapLinearFilter,
@@ -21074,11 +21367,14 @@
 	}
 
 	// #PROXY1.0.0 Classes:WebGL1Renderer Uses:
-	const WebGL1Renderer = PROXY.CTOR(orig_WebGL1Renderer, "WebGL1Renderer");
 
-	class orig_WebGL1Renderer extends WebGLRenderer {}
+	class WebGL1Renderer extends WebGLRenderer {}
 
 	WebGL1Renderer.prototype.isWebGL1Renderer = true;
+	function wrap_WebGL1Renderer() {
+		return PROXY.wrap(WebGL1Renderer, arguments);
+	}
+	PROXY.init(WebGL1Renderer);
 
 	class FogExp2 {
 		constructor(color, density = 0.00025) {
@@ -21127,9 +21423,8 @@
 	}
 
 	// #PROXY1.0.0 Classes:Scene Uses:
-	const Scene = PROXY.CTOR(orig_Scene, "Scene");
 
-	class orig_Scene extends Object3D {
+	class Scene extends Object3D {
 		constructor() {
 			super();
 			this.isScene = true;
@@ -21174,6 +21469,11 @@
 		}
 
 	}
+
+	function wrap_Scene() {
+		return PROXY.wrap(Scene, arguments);
+	}
+	PROXY.init(Scene);
 
 	class InterleavedBuffer {
 		constructor(array, stride) {
@@ -21497,9 +21797,8 @@
 	}
 
 	// #PROXY1.0.0 Classes:SpriteMaterial Uses:
-	const SpriteMaterial = PROXY.CTOR(orig_SpriteMaterial, "SpriteMaterial");
 
-	class orig_SpriteMaterial extends Material {
+	class SpriteMaterial extends Material {
 		constructor(parameters) {
 			super();
 			this.isSpriteMaterial = true;
@@ -21527,10 +21826,12 @@
 
 	}
 
+	function wrap_SpriteMaterial() {
+		return PROXY.wrap(SpriteMaterial, arguments);
+	}
+	PROXY.init(SpriteMaterial);
+
 	// #PROXY1.0.0 Classes:Sprite Uses:BufferGeometry,SpriteMaterial
-	const Sprite = PROXY.CTOR(orig_Sprite, "Sprite");
-	const proxy_BufferGeometry_in_Sprite = PROXY.Owned(BufferGeometry, "Sprite");
-	const proxy_SpriteMaterial_in_Sprite = PROXY.Owned(SpriteMaterial, "Sprite");
 
 	let _geometry;
 
@@ -21558,14 +21859,17 @@
 
 	const _uvC = /*@__PURE__*/new Vector2();
 
-	class orig_Sprite extends Object3D {
+	class Sprite extends Object3D {
 		constructor(material) {
 			super();
 			this.isSprite = true;
 			this.type = 'Sprite';
 
 			if (_geometry === undefined) {
-				_geometry = new proxy_BufferGeometry_in_Sprite();
+				_geometry = new PROXY.internal({
+					c: BufferGeometry,
+					w: 'Sprite'
+				});
 				const float32Array = new Float32Array([-0.5, -0.5, 0, 0, 0, 0.5, -0.5, 0, 1, 0, 0.5, 0.5, 0, 1, 1, -0.5, 0.5, 0, 0, 1]);
 				const interleavedBuffer = new InterleavedBuffer(float32Array, 5);
 
@@ -21577,7 +21881,10 @@
 			}
 
 			this.geometry = _geometry;
-			this.material = material !== undefined ? material : new proxy_SpriteMaterial_in_Sprite();
+			this.material = material !== undefined ? material : new PROXY.internal({
+				c: SpriteMaterial,
+				w: 'Sprite'
+			});
 			this.center = new Vector2(0.5, 0.5);
 		}
 
@@ -21672,14 +21979,18 @@
 		vertexPosition.applyMatrix4(_viewWorldMatrix);
 	}
 
+	function wrap_Sprite() {
+		return PROXY.wrap(Sprite, arguments);
+	}
+	PROXY.init(Sprite);
+
 	// #PROXY1.0.0 Classes:LOD Uses:
-	const LOD = PROXY.CTOR(orig_LOD, "LOD");
 
 	const _v1$2 = /*@__PURE__*/new Vector3();
 
 	const _v2$1 = /*@__PURE__*/new Vector3();
 
-	class orig_LOD extends Object3D {
+	class LOD extends Object3D {
 		constructor() {
 			super();
 			this._currentLevel = 0;
@@ -21809,8 +22120,12 @@
 
 	}
 
+	function wrap_LOD() {
+		return PROXY.wrap(LOD, arguments);
+	}
+	PROXY.init(LOD);
+
 	// #PROXY1.0.0 Classes:SkinnedMesh Uses:
-	const SkinnedMesh = PROXY.CTOR(orig_SkinnedMesh, "SkinnedMesh");
 
 	const _basePosition = /*@__PURE__*/new Vector3();
 
@@ -21822,7 +22137,7 @@
 
 	const _matrix = /*@__PURE__*/new Matrix4();
 
-	class orig_SkinnedMesh extends Mesh {
+	class SkinnedMesh extends Mesh {
 		constructor(geometry, material) {
 			super(geometry, material);
 			this.isSkinnedMesh = true;
@@ -21917,10 +22232,14 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:Bone Uses:
-	const Bone = PROXY.CTOR(orig_Bone, "Bone");
+	function wrap_SkinnedMesh() {
+		return PROXY.wrap(SkinnedMesh, arguments);
+	}
+	PROXY.init(SkinnedMesh);
 
-	class orig_Bone extends Object3D {
+	// #PROXY1.0.0 Classes:Bone Uses:
+
+	class Bone extends Object3D {
 		constructor() {
 			super();
 			this.isBone = true;
@@ -21929,10 +22248,14 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:DataTexture Uses:
-	const DataTexture = PROXY.CTOR(orig_DataTexture, "DataTexture");
+	function wrap_Bone() {
+		return PROXY.wrap(Bone, arguments);
+	}
+	PROXY.init(Bone);
 
-	class orig_DataTexture extends Texture {
+	// #PROXY1.0.0 Classes:DataTexture Uses:
+
+	class DataTexture extends Texture {
 		constructor(data = null, width = 1, height = 1, format, type, mapping, wrapS, wrapT, magFilter = NearestFilter, minFilter = NearestFilter, anisotropy, encoding) {
 			super(null, mapping, wrapS, wrapT, magFilter, minFilter, format, type, anisotropy, encoding);
 			this.isDataTexture = true;
@@ -21948,17 +22271,18 @@
 
 	}
 
+	function wrap_DataTexture() {
+		return PROXY.wrap(DataTexture, arguments);
+	}
+	PROXY.init(DataTexture);
+
 	// #PROXY1.0.0 Classes:Skeleton Uses:Skeleton,DataTexture,Bone
-	const Skeleton = PROXY.CTOR(orig_Skeleton, "Skeleton");
-	const proxy_Skeleton_in_Skeleton = PROXY.Owned(Skeleton, "Skeleton");
-	const proxy_DataTexture_in_Skeleton = PROXY.Owned(DataTexture, "Skeleton");
-	const proxy_Bone_in_Skeleton = PROXY.Owned(Bone, "Skeleton");
 
 	const _offsetMatrix = /*@__PURE__*/new Matrix4();
 
 	const _identityMatrix = /*@__PURE__*/new Matrix4();
 
-	class orig_Skeleton {
+	class Skeleton {
 		constructor(bones = [], boneInverses = []) {
 			this.uuid = generateUUID();
 			this.bones = bones.slice(0);
@@ -22052,7 +22376,10 @@
 		}
 
 		clone() {
-			return new proxy_Skeleton_in_Skeleton(this.bones, this.boneInverses);
+			return new PROXY.internal({
+				c: Skeleton,
+				w: 'Skeleton'
+			}, this.bones, this.boneInverses);
 		}
 
 		computeBoneTexture() {
@@ -22070,7 +22397,10 @@
 
 			boneMatrices.set(this.boneMatrices); // copy current values
 
-			const boneTexture = new proxy_DataTexture_in_Skeleton(boneMatrices, size, size, RGBAFormat, FloatType);
+			const boneTexture = new PROXY.internal({
+				c: DataTexture,
+				w: 'Skeleton'
+			}, boneMatrices, size, size, RGBAFormat, FloatType);
 			boneTexture.needsUpdate = true;
 			this.boneMatrices = boneMatrices;
 			this.boneTexture = boneTexture;
@@ -22106,7 +22436,10 @@
 
 				if (bone === undefined) {
 					console.warn('THREE.Skeleton: No bone found with UUID:', uuid);
-					bone = new proxy_Bone_in_Skeleton();
+					bone = new PROXY.internal({
+						c: Bone,
+						w: 'Skeleton'
+					});
 				}
 
 				this.bones.push(bone);
@@ -22142,6 +22475,11 @@
 		}
 
 	}
+
+	function wrap_Skeleton() {
+		return PROXY.wrap(Skeleton, arguments);
+	}
+	PROXY.init(Skeleton);
 
 	class InstancedBufferAttribute extends BufferAttribute {
 		constructor(array, itemSize, normalized, meshPerAttribute = 1) {
@@ -22252,9 +22590,8 @@
 	}
 
 	// #PROXY1.0.0 Classes:LineBasicMaterial Uses:
-	const LineBasicMaterial = PROXY.CTOR(orig_LineBasicMaterial, "LineBasicMaterial");
 
-	class orig_LineBasicMaterial extends Material {
+	class LineBasicMaterial extends Material {
 		constructor(parameters) {
 			super();
 			this.isLineBasicMaterial = true;
@@ -22279,10 +22616,12 @@
 
 	}
 
+	function wrap_LineBasicMaterial() {
+		return PROXY.wrap(LineBasicMaterial, arguments);
+	}
+	PROXY.init(LineBasicMaterial);
+
 	// #PROXY1.0.0 Classes:Line Uses:BufferGeometry,LineBasicMaterial
-	const Line = PROXY.CTOR(orig_Line, "Line");
-	const proxy_BufferGeometry_in_Line = PROXY.Owned(BufferGeometry, "Line");
-	const proxy_LineBasicMaterial_in_Line = PROXY.Owned(LineBasicMaterial, "Line");
 
 	const _start$1 = /*@__PURE__*/new Vector3();
 
@@ -22294,8 +22633,14 @@
 
 	const _sphere$1 = /*@__PURE__*/new Sphere();
 
-	class orig_Line extends Object3D {
-		constructor(geometry = new proxy_BufferGeometry_in_Line(), material = new proxy_LineBasicMaterial_in_Line()) {
+	class Line extends Object3D {
+		constructor(geometry = new PROXY.internal({
+			c: BufferGeometry,
+			w: 'Line'
+		}), material = new PROXY.internal({
+			c: LineBasicMaterial,
+			w: 'Line'
+		})) {
 			super();
 			this.isLine = true;
 			this.type = 'Line';
@@ -22445,14 +22790,18 @@
 
 	}
 
+	function wrap_Line() {
+		return PROXY.wrap(Line, arguments);
+	}
+	PROXY.init(Line);
+
 	// #PROXY1.0.0 Classes:LineSegments Uses:
-	const LineSegments = PROXY.CTOR(orig_LineSegments, "LineSegments");
 
 	const _start = /*@__PURE__*/new Vector3();
 
 	const _end = /*@__PURE__*/new Vector3();
 
-	class orig_LineSegments extends Line {
+	class LineSegments extends Line {
 		constructor(geometry, material) {
 			super(geometry, material);
 			this.isLineSegments = true;
@@ -22485,10 +22834,14 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:LineLoop Uses:
-	const LineLoop = PROXY.CTOR(orig_LineLoop, "LineLoop");
+	function wrap_LineSegments() {
+		return PROXY.wrap(LineSegments, arguments);
+	}
+	PROXY.init(LineSegments);
 
-	class orig_LineLoop extends Line {
+	// #PROXY1.0.0 Classes:LineLoop Uses:
+
+	class LineLoop extends Line {
 		constructor(geometry, material) {
 			super(geometry, material);
 			this.isLineLoop = true;
@@ -22497,10 +22850,14 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:PointsMaterial Uses:
-	const PointsMaterial = PROXY.CTOR(orig_PointsMaterial, "PointsMaterial");
+	function wrap_LineLoop() {
+		return PROXY.wrap(LineLoop, arguments);
+	}
+	PROXY.init(LineLoop);
 
-	class orig_PointsMaterial extends Material {
+	// #PROXY1.0.0 Classes:PointsMaterial Uses:
+
+	class PointsMaterial extends Material {
 		constructor(parameters) {
 			super();
 			this.isPointsMaterial = true;
@@ -22527,10 +22884,12 @@
 
 	}
 
+	function wrap_PointsMaterial() {
+		return PROXY.wrap(PointsMaterial, arguments);
+	}
+	PROXY.init(PointsMaterial);
+
 	// #PROXY1.0.0 Classes:Points Uses:BufferGeometry,PointsMaterial
-	const Points = PROXY.CTOR(orig_Points, "Points");
-	const proxy_BufferGeometry_in_Points = PROXY.Owned(BufferGeometry, "Points");
-	const proxy_PointsMaterial_in_Points = PROXY.Owned(PointsMaterial, "Points");
 
 	const _inverseMatrix = /*@__PURE__*/new Matrix4();
 
@@ -22540,8 +22899,14 @@
 
 	const _position$2 = /*@__PURE__*/new Vector3();
 
-	class orig_Points extends Object3D {
-		constructor(geometry = new proxy_BufferGeometry_in_Points(), material = new proxy_PointsMaterial_in_Points()) {
+	class Points extends Object3D {
+		constructor(geometry = new PROXY.internal({
+			c: BufferGeometry,
+			w: 'Points'
+		}), material = new PROXY.internal({
+			c: PointsMaterial,
+			w: 'Points'
+		})) {
 			super();
 			this.isPoints = true;
 			this.type = 'Points';
@@ -22650,10 +23015,14 @@
 		}
 	}
 
-	// #PROXY1.0.0 Classes:VideoTexture Uses:
-	const VideoTexture = PROXY.CTOR(orig_VideoTexture, "VideoTexture");
+	function wrap_Points() {
+		return PROXY.wrap(Points, arguments);
+	}
+	PROXY.init(Points);
 
-	class orig_VideoTexture extends Texture {
+	// #PROXY1.0.0 Classes:VideoTexture Uses:
+
+	class VideoTexture extends Texture {
 		constructor(video, mapping, wrapS, wrapT, magFilter, minFilter, format, type, anisotropy) {
 			super(video, mapping, wrapS, wrapT, magFilter, minFilter, format, type, anisotropy);
 			this.isVideoTexture = true;
@@ -22687,10 +23056,14 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:FramebufferTexture Uses:
-	const FramebufferTexture = PROXY.CTOR(orig_FramebufferTexture, "FramebufferTexture");
+	function wrap_VideoTexture() {
+		return PROXY.wrap(VideoTexture, arguments);
+	}
+	PROXY.init(VideoTexture);
 
-	class orig_FramebufferTexture extends Texture {
+	// #PROXY1.0.0 Classes:FramebufferTexture Uses:
+
+	class FramebufferTexture extends Texture {
 		constructor(width, height, format) {
 			super({
 				width,
@@ -22706,10 +23079,14 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:CompressedTexture Uses:
-	const CompressedTexture = PROXY.CTOR(orig_CompressedTexture, "CompressedTexture");
+	function wrap_FramebufferTexture() {
+		return PROXY.wrap(FramebufferTexture, arguments);
+	}
+	PROXY.init(FramebufferTexture);
 
-	class orig_CompressedTexture extends Texture {
+	// #PROXY1.0.0 Classes:CompressedTexture Uses:
+
+	class CompressedTexture extends Texture {
 		constructor(mipmaps, width, height, format, type, mapping, wrapS, wrapT, magFilter, minFilter, anisotropy, encoding) {
 			super(null, mapping, wrapS, wrapT, magFilter, minFilter, format, type, anisotropy, encoding);
 			this.isCompressedTexture = true;
@@ -22728,10 +23105,14 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:CanvasTexture Uses:
-	const CanvasTexture = PROXY.CTOR(orig_CanvasTexture, "CanvasTexture");
+	function wrap_CompressedTexture() {
+		return PROXY.wrap(CompressedTexture, arguments);
+	}
+	PROXY.init(CompressedTexture);
 
-	class orig_CanvasTexture extends Texture {
+	// #PROXY1.0.0 Classes:CanvasTexture Uses:
+
+	class CanvasTexture extends Texture {
 		constructor(canvas, mapping, wrapS, wrapT, magFilter, minFilter, format, type, anisotropy) {
 			super(canvas, mapping, wrapS, wrapT, magFilter, minFilter, format, type, anisotropy);
 			this.isCanvasTexture = true;
@@ -22739,6 +23120,11 @@
 		}
 
 	}
+
+	function wrap_CanvasTexture() {
+		return PROXY.wrap(CanvasTexture, arguments);
+	}
+	PROXY.init(CanvasTexture);
 
 	/**
 	 * Extensible curve object.
@@ -24030,10 +24416,8 @@
 	}
 
 	// #PROXY1.0.0 Classes:LatheGeometry Uses:LatheGeometry
-	const LatheGeometry = PROXY.CTOR(orig_LatheGeometry, "LatheGeometry");
-	const proxy_LatheGeometry_in_LatheGeometry = PROXY.Owned(LatheGeometry, "LatheGeometry");
 
-	class orig_LatheGeometry extends BufferGeometry {
+	class LatheGeometry extends BufferGeometry {
 		constructor(points = [new Vector2(0, -0.5), new Vector2(0.5, 0), new Vector2(0, 0.5)], segments = 12, phiStart = 0, phiLength = Math.PI * 2) {
 			super();
 			this.type = 'LatheGeometry';
@@ -24144,16 +24528,22 @@
 		}
 
 		static fromJSON(data) {
-			return new proxy_LatheGeometry_in_LatheGeometry(data.points, data.segments, data.phiStart, data.phiLength);
+			return new PROXY.internal({
+				c: LatheGeometry,
+				w: 'LatheGeometry'
+			}, data.points, data.segments, data.phiStart, data.phiLength);
 		}
 
 	}
 
-	// #PROXY1.0.0 Classes:CapsuleGeometry Uses:CapsuleGeometry
-	const CapsuleGeometry = PROXY.CTOR(orig_CapsuleGeometry, "CapsuleGeometry");
-	const proxy_CapsuleGeometry_in_CapsuleGeometry = PROXY.Owned(CapsuleGeometry, "CapsuleGeometry");
+	function wrap_LatheGeometry() {
+		return PROXY.wrap(LatheGeometry, arguments);
+	}
+	PROXY.init(LatheGeometry);
 
-	class orig_CapsuleGeometry extends LatheGeometry {
+	// #PROXY1.0.0 Classes:CapsuleGeometry Uses:CapsuleGeometry
+
+	class CapsuleGeometry extends LatheGeometry {
 		constructor(radius = 1, length = 1, capSegments = 4, radialSegments = 8) {
 			const path = new Path();
 			path.absarc(0, -length / 2, radius, Math.PI * 1.5, 0);
@@ -24169,16 +24559,22 @@
 		}
 
 		static fromJSON(data) {
-			return new proxy_CapsuleGeometry_in_CapsuleGeometry(data.radius, data.length, data.capSegments, data.radialSegments);
+			return new PROXY.internal({
+				c: CapsuleGeometry,
+				w: 'CapsuleGeometry'
+			}, data.radius, data.length, data.capSegments, data.radialSegments);
 		}
 
 	}
 
-	// #PROXY1.0.0 Classes:CircleGeometry Uses:CircleGeometry
-	const CircleGeometry = PROXY.CTOR(orig_CircleGeometry, "CircleGeometry");
-	const proxy_CircleGeometry_in_CircleGeometry = PROXY.Owned(CircleGeometry, "CircleGeometry");
+	function wrap_CapsuleGeometry() {
+		return PROXY.wrap(CapsuleGeometry, arguments);
+	}
+	PROXY.init(CapsuleGeometry);
 
-	class orig_CircleGeometry extends BufferGeometry {
+	// #PROXY1.0.0 Classes:CircleGeometry Uses:CircleGeometry
+
+	class CircleGeometry extends BufferGeometry {
 		constructor(radius = 1, segments = 8, thetaStart = 0, thetaLength = Math.PI * 2) {
 			super();
 			this.type = 'CircleGeometry';
@@ -24229,16 +24625,22 @@
 		}
 
 		static fromJSON(data) {
-			return new proxy_CircleGeometry_in_CircleGeometry(data.radius, data.segments, data.thetaStart, data.thetaLength);
+			return new PROXY.internal({
+				c: CircleGeometry,
+				w: 'CircleGeometry'
+			}, data.radius, data.segments, data.thetaStart, data.thetaLength);
 		}
 
 	}
 
-	// #PROXY1.0.0 Classes:CylinderGeometry Uses:CylinderGeometry
-	const CylinderGeometry = PROXY.CTOR(orig_CylinderGeometry, "CylinderGeometry");
-	const proxy_CylinderGeometry_in_CylinderGeometry = PROXY.Owned(CylinderGeometry, "CylinderGeometry");
+	function wrap_CircleGeometry() {
+		return PROXY.wrap(CircleGeometry, arguments);
+	}
+	PROXY.init(CircleGeometry);
 
-	class orig_CylinderGeometry extends BufferGeometry {
+	// #PROXY1.0.0 Classes:CylinderGeometry Uses:CylinderGeometry
+
+	class CylinderGeometry extends BufferGeometry {
 		constructor(radiusTop = 1, radiusBottom = 1, height = 1, radialSegments = 8, heightSegments = 1, openEnded = false, thetaStart = 0, thetaLength = Math.PI * 2) {
 			super();
 			this.type = 'CylinderGeometry';
@@ -24406,16 +24808,22 @@
 		}
 
 		static fromJSON(data) {
-			return new proxy_CylinderGeometry_in_CylinderGeometry(data.radiusTop, data.radiusBottom, data.height, data.radialSegments, data.heightSegments, data.openEnded, data.thetaStart, data.thetaLength);
+			return new PROXY.internal({
+				c: CylinderGeometry,
+				w: 'CylinderGeometry'
+			}, data.radiusTop, data.radiusBottom, data.height, data.radialSegments, data.heightSegments, data.openEnded, data.thetaStart, data.thetaLength);
 		}
 
 	}
 
-	// #PROXY1.0.0 Classes:ConeGeometry Uses:ConeGeometry
-	const ConeGeometry = PROXY.CTOR(orig_ConeGeometry, "ConeGeometry");
-	const proxy_ConeGeometry_in_ConeGeometry = PROXY.Owned(ConeGeometry, "ConeGeometry");
+	function wrap_CylinderGeometry() {
+		return PROXY.wrap(CylinderGeometry, arguments);
+	}
+	PROXY.init(CylinderGeometry);
 
-	class orig_ConeGeometry extends CylinderGeometry {
+	// #PROXY1.0.0 Classes:ConeGeometry Uses:ConeGeometry
+
+	class ConeGeometry extends CylinderGeometry {
 		constructor(radius = 1, height = 1, radialSegments = 8, heightSegments = 1, openEnded = false, thetaStart = 0, thetaLength = Math.PI * 2) {
 			super(0, radius, height, radialSegments, heightSegments, openEnded, thetaStart, thetaLength);
 			this.type = 'ConeGeometry';
@@ -24431,16 +24839,22 @@
 		}
 
 		static fromJSON(data) {
-			return new proxy_ConeGeometry_in_ConeGeometry(data.radius, data.height, data.radialSegments, data.heightSegments, data.openEnded, data.thetaStart, data.thetaLength);
+			return new PROXY.internal({
+				c: ConeGeometry,
+				w: 'ConeGeometry'
+			}, data.radius, data.height, data.radialSegments, data.heightSegments, data.openEnded, data.thetaStart, data.thetaLength);
 		}
 
 	}
 
-	// #PROXY1.0.0 Classes:PolyhedronGeometry Uses:PolyhedronGeometry
-	const PolyhedronGeometry = PROXY.CTOR(orig_PolyhedronGeometry, "PolyhedronGeometry");
-	const proxy_PolyhedronGeometry_in_PolyhedronGeometry = PROXY.Owned(PolyhedronGeometry, "PolyhedronGeometry");
+	function wrap_ConeGeometry() {
+		return PROXY.wrap(ConeGeometry, arguments);
+	}
+	PROXY.init(ConeGeometry);
 
-	class orig_PolyhedronGeometry extends BufferGeometry {
+	// #PROXY1.0.0 Classes:PolyhedronGeometry Uses:PolyhedronGeometry
+
+	class PolyhedronGeometry extends BufferGeometry {
 		constructor(vertices = [], indices = [], radius = 1, detail = 0) {
 			super();
 			this.type = 'PolyhedronGeometry';
@@ -24629,16 +25043,22 @@
 		}
 
 		static fromJSON(data) {
-			return new proxy_PolyhedronGeometry_in_PolyhedronGeometry(data.vertices, data.indices, data.radius, data.details);
+			return new PROXY.internal({
+				c: PolyhedronGeometry,
+				w: 'PolyhedronGeometry'
+			}, data.vertices, data.indices, data.radius, data.details);
 		}
 
 	}
 
-	// #PROXY1.0.0 Classes:DodecahedronGeometry Uses:DodecahedronGeometry
-	const DodecahedronGeometry = PROXY.CTOR(orig_DodecahedronGeometry, "DodecahedronGeometry");
-	const proxy_DodecahedronGeometry_in_DodecahedronGeometry = PROXY.Owned(DodecahedronGeometry, "DodecahedronGeometry");
+	function wrap_PolyhedronGeometry() {
+		return PROXY.wrap(PolyhedronGeometry, arguments);
+	}
+	PROXY.init(PolyhedronGeometry);
 
-	class orig_DodecahedronGeometry extends PolyhedronGeometry {
+	// #PROXY1.0.0 Classes:DodecahedronGeometry Uses:DodecahedronGeometry
+
+	class DodecahedronGeometry extends PolyhedronGeometry {
 		constructor(radius = 1, detail = 0) {
 			const t = (1 + Math.sqrt(5)) / 2;
 			const r = 1 / t;
@@ -24657,13 +25077,20 @@
 		}
 
 		static fromJSON(data) {
-			return new proxy_DodecahedronGeometry_in_DodecahedronGeometry(data.radius, data.detail);
+			return new PROXY.internal({
+				c: DodecahedronGeometry,
+				w: 'DodecahedronGeometry'
+			}, data.radius, data.detail);
 		}
 
 	}
 
+	function wrap_DodecahedronGeometry() {
+		return PROXY.wrap(DodecahedronGeometry, arguments);
+	}
+	PROXY.init(DodecahedronGeometry);
+
 	// #PROXY1.0.0 Classes:EdgesGeometry Uses:
-	const EdgesGeometry = PROXY.CTOR(orig_EdgesGeometry, "EdgesGeometry");
 
 	const _v0 = /*@__PURE__*/new Vector3();
 
@@ -24673,7 +25100,7 @@
 
 	const _triangle = /*@__PURE__*/new Triangle();
 
-	class orig_EdgesGeometry extends BufferGeometry {
+	class EdgesGeometry extends BufferGeometry {
 		constructor(geometry = null, thresholdAngle = 1) {
 			super();
 			this.type = 'EdgesGeometry';
@@ -24779,6 +25206,11 @@
 		}
 
 	}
+
+	function wrap_EdgesGeometry() {
+		return PROXY.wrap(EdgesGeometry, arguments);
+	}
+	PROXY.init(EdgesGeometry);
 
 	class Shape extends Path {
 		constructor(points) {
@@ -25496,10 +25928,8 @@
 	}
 
 	// #PROXY1.0.0 Classes:ExtrudeGeometry Uses:ExtrudeGeometry
-	const ExtrudeGeometry = PROXY.CTOR(orig_ExtrudeGeometry, "ExtrudeGeometry");
-	const proxy_ExtrudeGeometry_in_ExtrudeGeometry = PROXY.Owned(ExtrudeGeometry, "ExtrudeGeometry");
 
-	class orig_ExtrudeGeometry extends BufferGeometry {
+	class ExtrudeGeometry extends BufferGeometry {
 		constructor(shapes = new Shape([new Vector2(0.5, 0.5), new Vector2(-0.5, 0.5), new Vector2(-0.5, -0.5), new Vector2(0.5, -0.5)]), options = {}) {
 			super();
 			this.type = 'ExtrudeGeometry';
@@ -25942,7 +26372,10 @@
 				data.options.extrudePath = new Curves[extrudePath.type]().fromJSON(extrudePath);
 			}
 
-			return new proxy_ExtrudeGeometry_in_ExtrudeGeometry(geometryShapes, data.options);
+			return new PROXY.internal({
+				c: ExtrudeGeometry,
+				w: 'ExtrudeGeometry'
+			}, geometryShapes, data.options);
 		}
 
 	}
@@ -25996,11 +26429,14 @@
 		return data;
 	}
 
-	// #PROXY1.0.0 Classes:IcosahedronGeometry Uses:IcosahedronGeometry
-	const IcosahedronGeometry = PROXY.CTOR(orig_IcosahedronGeometry, "IcosahedronGeometry");
-	const proxy_IcosahedronGeometry_in_IcosahedronGeometry = PROXY.Owned(IcosahedronGeometry, "IcosahedronGeometry");
+	function wrap_ExtrudeGeometry() {
+		return PROXY.wrap(ExtrudeGeometry, arguments);
+	}
+	PROXY.init(ExtrudeGeometry);
 
-	class orig_IcosahedronGeometry extends PolyhedronGeometry {
+	// #PROXY1.0.0 Classes:IcosahedronGeometry Uses:IcosahedronGeometry
+
+	class IcosahedronGeometry extends PolyhedronGeometry {
 		constructor(radius = 1, detail = 0) {
 			const t = (1 + Math.sqrt(5)) / 2;
 			const vertices = [-1, t, 0, 1, t, 0, -1, -t, 0, 1, -t, 0, 0, -1, t, 0, 1, t, 0, -1, -t, 0, 1, -t, t, 0, -1, t, 0, 1, -t, 0, -1, -t, 0, 1];
@@ -26014,16 +26450,22 @@
 		}
 
 		static fromJSON(data) {
-			return new proxy_IcosahedronGeometry_in_IcosahedronGeometry(data.radius, data.detail);
+			return new PROXY.internal({
+				c: IcosahedronGeometry,
+				w: 'IcosahedronGeometry'
+			}, data.radius, data.detail);
 		}
 
 	}
 
-	// #PROXY1.0.0 Classes:OctahedronGeometry Uses:OctahedronGeometry
-	const OctahedronGeometry = PROXY.CTOR(orig_OctahedronGeometry, "OctahedronGeometry");
-	const proxy_OctahedronGeometry_in_OctahedronGeometry = PROXY.Owned(OctahedronGeometry, "OctahedronGeometry");
+	function wrap_IcosahedronGeometry() {
+		return PROXY.wrap(IcosahedronGeometry, arguments);
+	}
+	PROXY.init(IcosahedronGeometry);
 
-	class orig_OctahedronGeometry extends PolyhedronGeometry {
+	// #PROXY1.0.0 Classes:OctahedronGeometry Uses:OctahedronGeometry
+
+	class OctahedronGeometry extends PolyhedronGeometry {
 		constructor(radius = 1, detail = 0) {
 			const vertices = [1, 0, 0, -1, 0, 0, 0, 1, 0, 0, -1, 0, 0, 0, 1, 0, 0, -1];
 			const indices = [0, 2, 4, 0, 4, 3, 0, 3, 5, 0, 5, 2, 1, 2, 5, 1, 5, 3, 1, 3, 4, 1, 4, 2];
@@ -26036,16 +26478,22 @@
 		}
 
 		static fromJSON(data) {
-			return new proxy_OctahedronGeometry_in_OctahedronGeometry(data.radius, data.detail);
+			return new PROXY.internal({
+				c: OctahedronGeometry,
+				w: 'OctahedronGeometry'
+			}, data.radius, data.detail);
 		}
 
 	}
 
-	// #PROXY1.0.0 Classes:RingGeometry Uses:RingGeometry
-	const RingGeometry = PROXY.CTOR(orig_RingGeometry, "RingGeometry");
-	const proxy_RingGeometry_in_RingGeometry = PROXY.Owned(RingGeometry, "RingGeometry");
+	function wrap_OctahedronGeometry() {
+		return PROXY.wrap(OctahedronGeometry, arguments);
+	}
+	PROXY.init(OctahedronGeometry);
 
-	class orig_RingGeometry extends BufferGeometry {
+	// #PROXY1.0.0 Classes:RingGeometry Uses:RingGeometry
+
+	class RingGeometry extends BufferGeometry {
 		constructor(innerRadius = 0.5, outerRadius = 1, thetaSegments = 8, phiSegments = 1, thetaStart = 0, thetaLength = Math.PI * 2) {
 			super();
 			this.type = 'RingGeometry';
@@ -26114,16 +26562,22 @@
 		}
 
 		static fromJSON(data) {
-			return new proxy_RingGeometry_in_RingGeometry(data.innerRadius, data.outerRadius, data.thetaSegments, data.phiSegments, data.thetaStart, data.thetaLength);
+			return new PROXY.internal({
+				c: RingGeometry,
+				w: 'RingGeometry'
+			}, data.innerRadius, data.outerRadius, data.thetaSegments, data.phiSegments, data.thetaStart, data.thetaLength);
 		}
 
 	}
 
-	// #PROXY1.0.0 Classes:ShapeGeometry Uses:ShapeGeometry
-	const ShapeGeometry = PROXY.CTOR(orig_ShapeGeometry, "ShapeGeometry");
-	const proxy_ShapeGeometry_in_ShapeGeometry = PROXY.Owned(ShapeGeometry, "ShapeGeometry");
+	function wrap_RingGeometry() {
+		return PROXY.wrap(RingGeometry, arguments);
+	}
+	PROXY.init(RingGeometry);
 
-	class orig_ShapeGeometry extends BufferGeometry {
+	// #PROXY1.0.0 Classes:ShapeGeometry Uses:ShapeGeometry
+
+	class ShapeGeometry extends BufferGeometry {
 		constructor(shapes = new Shape([new Vector2(0, 0.5), new Vector2(-0.5, -0.5), new Vector2(0.5, -0.5)]), curveSegments = 12) {
 			super();
 			this.type = 'ShapeGeometry';
@@ -26217,7 +26671,10 @@
 				geometryShapes.push(shape);
 			}
 
-			return new proxy_ShapeGeometry_in_ShapeGeometry(geometryShapes, data.curveSegments);
+			return new PROXY.internal({
+				c: ShapeGeometry,
+				w: 'ShapeGeometry'
+			}, geometryShapes, data.curveSegments);
 		}
 
 	}
@@ -26237,11 +26694,14 @@
 		return data;
 	}
 
-	// #PROXY1.0.0 Classes:SphereGeometry Uses:SphereGeometry
-	const SphereGeometry = PROXY.CTOR(orig_SphereGeometry, "SphereGeometry");
-	const proxy_SphereGeometry_in_SphereGeometry = PROXY.Owned(SphereGeometry, "SphereGeometry");
+	function wrap_ShapeGeometry() {
+		return PROXY.wrap(ShapeGeometry, arguments);
+	}
+	PROXY.init(ShapeGeometry);
 
-	class orig_SphereGeometry extends BufferGeometry {
+	// #PROXY1.0.0 Classes:SphereGeometry Uses:SphereGeometry
+
+	class SphereGeometry extends BufferGeometry {
 		constructor(radius = 1, widthSegments = 32, heightSegments = 16, phiStart = 0, phiLength = Math.PI * 2, thetaStart = 0, thetaLength = Math.PI) {
 			super();
 			this.type = 'SphereGeometry';
@@ -26317,16 +26777,22 @@
 		}
 
 		static fromJSON(data) {
-			return new proxy_SphereGeometry_in_SphereGeometry(data.radius, data.widthSegments, data.heightSegments, data.phiStart, data.phiLength, data.thetaStart, data.thetaLength);
+			return new PROXY.internal({
+				c: SphereGeometry,
+				w: 'SphereGeometry'
+			}, data.radius, data.widthSegments, data.heightSegments, data.phiStart, data.phiLength, data.thetaStart, data.thetaLength);
 		}
 
 	}
 
-	// #PROXY1.0.0 Classes:TetrahedronGeometry Uses:TetrahedronGeometry
-	const TetrahedronGeometry = PROXY.CTOR(orig_TetrahedronGeometry, "TetrahedronGeometry");
-	const proxy_TetrahedronGeometry_in_TetrahedronGeometry = PROXY.Owned(TetrahedronGeometry, "TetrahedronGeometry");
+	function wrap_SphereGeometry() {
+		return PROXY.wrap(SphereGeometry, arguments);
+	}
+	PROXY.init(SphereGeometry);
 
-	class orig_TetrahedronGeometry extends PolyhedronGeometry {
+	// #PROXY1.0.0 Classes:TetrahedronGeometry Uses:TetrahedronGeometry
+
+	class TetrahedronGeometry extends PolyhedronGeometry {
 		constructor(radius = 1, detail = 0) {
 			const vertices = [1, 1, 1, -1, -1, 1, -1, 1, -1, 1, -1, -1];
 			const indices = [2, 1, 0, 0, 3, 2, 1, 3, 0, 2, 3, 1];
@@ -26339,16 +26805,22 @@
 		}
 
 		static fromJSON(data) {
-			return new proxy_TetrahedronGeometry_in_TetrahedronGeometry(data.radius, data.detail);
+			return new PROXY.internal({
+				c: TetrahedronGeometry,
+				w: 'TetrahedronGeometry'
+			}, data.radius, data.detail);
 		}
 
 	}
 
-	// #PROXY1.0.0 Classes:TorusGeometry Uses:TorusGeometry
-	const TorusGeometry = PROXY.CTOR(orig_TorusGeometry, "TorusGeometry");
-	const proxy_TorusGeometry_in_TorusGeometry = PROXY.Owned(TorusGeometry, "TorusGeometry");
+	function wrap_TetrahedronGeometry() {
+		return PROXY.wrap(TetrahedronGeometry, arguments);
+	}
+	PROXY.init(TetrahedronGeometry);
 
-	class orig_TorusGeometry extends BufferGeometry {
+	// #PROXY1.0.0 Classes:TorusGeometry Uses:TorusGeometry
+
+	class TorusGeometry extends BufferGeometry {
 		constructor(radius = 1, tube = 0.4, radialSegments = 8, tubularSegments = 6, arc = Math.PI * 2) {
 			super();
 			this.type = 'TorusGeometry';
@@ -26413,16 +26885,22 @@
 		}
 
 		static fromJSON(data) {
-			return new proxy_TorusGeometry_in_TorusGeometry(data.radius, data.tube, data.radialSegments, data.tubularSegments, data.arc);
+			return new PROXY.internal({
+				c: TorusGeometry,
+				w: 'TorusGeometry'
+			}, data.radius, data.tube, data.radialSegments, data.tubularSegments, data.arc);
 		}
 
 	}
 
-	// #PROXY1.0.0 Classes:TorusKnotGeometry Uses:TorusKnotGeometry
-	const TorusKnotGeometry = PROXY.CTOR(orig_TorusKnotGeometry, "TorusKnotGeometry");
-	const proxy_TorusKnotGeometry_in_TorusKnotGeometry = PROXY.Owned(TorusKnotGeometry, "TorusKnotGeometry");
+	function wrap_TorusGeometry() {
+		return PROXY.wrap(TorusGeometry, arguments);
+	}
+	PROXY.init(TorusGeometry);
 
-	class orig_TorusKnotGeometry extends BufferGeometry {
+	// #PROXY1.0.0 Classes:TorusKnotGeometry Uses:TorusKnotGeometry
+
+	class TorusKnotGeometry extends BufferGeometry {
 		constructor(radius = 1, tube = 0.4, tubularSegments = 64, radialSegments = 8, p = 2, q = 3) {
 			super();
 			this.type = 'TorusKnotGeometry';
@@ -26519,16 +26997,22 @@
 		}
 
 		static fromJSON(data) {
-			return new proxy_TorusKnotGeometry_in_TorusKnotGeometry(data.radius, data.tube, data.tubularSegments, data.radialSegments, data.p, data.q);
+			return new PROXY.internal({
+				c: TorusKnotGeometry,
+				w: 'TorusKnotGeometry'
+			}, data.radius, data.tube, data.tubularSegments, data.radialSegments, data.p, data.q);
 		}
 
 	}
 
-	// #PROXY1.0.0 Classes:TubeGeometry Uses:TubeGeometry
-	const TubeGeometry = PROXY.CTOR(orig_TubeGeometry, "TubeGeometry");
-	const proxy_TubeGeometry_in_TubeGeometry = PROXY.Owned(TubeGeometry, "TubeGeometry");
+	function wrap_TorusKnotGeometry() {
+		return PROXY.wrap(TorusKnotGeometry, arguments);
+	}
+	PROXY.init(TorusKnotGeometry);
 
-	class orig_TubeGeometry extends BufferGeometry {
+	// #PROXY1.0.0 Classes:TubeGeometry Uses:TubeGeometry
+
+	class TubeGeometry extends BufferGeometry {
 		constructor(path = new QuadraticBezierCurve3(new Vector3(-1, -1, 0), new Vector3(-1, 1, 0), new Vector3(1, 1, 0)), tubularSegments = 64, radius = 1, radialSegments = 8, closed = false) {
 			super();
 			this.type = 'TubeGeometry';
@@ -26638,15 +27122,22 @@
 		static fromJSON(data) {
 			// This only works for built-in curves (e.g. CatmullRomCurve3).
 			// User defined curves or instances of CurvePath will not be deserialized.
-			return new proxy_TubeGeometry_in_TubeGeometry(new Curves[data.path.type]().fromJSON(data.path), data.tubularSegments, data.radius, data.radialSegments, data.closed);
+			return new PROXY.internal({
+				c: TubeGeometry,
+				w: 'TubeGeometry'
+			}, new Curves[data.path.type]().fromJSON(data.path), data.tubularSegments, data.radius, data.radialSegments, data.closed);
 		}
 
 	}
 
-	// #PROXY1.0.0 Classes:WireframeGeometry Uses:
-	const WireframeGeometry = PROXY.CTOR(orig_WireframeGeometry, "WireframeGeometry");
+	function wrap_TubeGeometry() {
+		return PROXY.wrap(TubeGeometry, arguments);
+	}
+	PROXY.init(TubeGeometry);
 
-	class orig_WireframeGeometry extends BufferGeometry {
+	// #PROXY1.0.0 Classes:WireframeGeometry Uses:
+
+	class WireframeGeometry extends BufferGeometry {
 		constructor(geometry = null) {
 			super();
 			this.type = 'WireframeGeometry';
@@ -26737,35 +27228,60 @@
 		}
 	}
 
+	function wrap_WireframeGeometry() {
+		return PROXY.wrap(WireframeGeometry, arguments);
+	}
+	PROXY.init(WireframeGeometry);
+
 	var Geometries = /*#__PURE__*/Object.freeze({
 		__proto__: null,
+		wrap_BoxGeometry: wrap_BoxGeometry,
 		BoxGeometry: BoxGeometry,
+		wrap_CapsuleGeometry: wrap_CapsuleGeometry,
 		CapsuleGeometry: CapsuleGeometry,
+		wrap_CircleGeometry: wrap_CircleGeometry,
 		CircleGeometry: CircleGeometry,
+		wrap_ConeGeometry: wrap_ConeGeometry,
 		ConeGeometry: ConeGeometry,
+		wrap_CylinderGeometry: wrap_CylinderGeometry,
 		CylinderGeometry: CylinderGeometry,
+		wrap_DodecahedronGeometry: wrap_DodecahedronGeometry,
 		DodecahedronGeometry: DodecahedronGeometry,
+		wrap_EdgesGeometry: wrap_EdgesGeometry,
 		EdgesGeometry: EdgesGeometry,
+		wrap_ExtrudeGeometry: wrap_ExtrudeGeometry,
 		ExtrudeGeometry: ExtrudeGeometry,
+		wrap_IcosahedronGeometry: wrap_IcosahedronGeometry,
 		IcosahedronGeometry: IcosahedronGeometry,
+		wrap_LatheGeometry: wrap_LatheGeometry,
 		LatheGeometry: LatheGeometry,
+		wrap_OctahedronGeometry: wrap_OctahedronGeometry,
 		OctahedronGeometry: OctahedronGeometry,
+		wrap_PlaneGeometry: wrap_PlaneGeometry,
 		PlaneGeometry: PlaneGeometry,
+		wrap_PolyhedronGeometry: wrap_PolyhedronGeometry,
 		PolyhedronGeometry: PolyhedronGeometry,
+		wrap_RingGeometry: wrap_RingGeometry,
 		RingGeometry: RingGeometry,
+		wrap_ShapeGeometry: wrap_ShapeGeometry,
 		ShapeGeometry: ShapeGeometry,
+		wrap_SphereGeometry: wrap_SphereGeometry,
 		SphereGeometry: SphereGeometry,
+		wrap_TetrahedronGeometry: wrap_TetrahedronGeometry,
 		TetrahedronGeometry: TetrahedronGeometry,
+		wrap_TorusGeometry: wrap_TorusGeometry,
 		TorusGeometry: TorusGeometry,
+		wrap_TorusKnotGeometry: wrap_TorusKnotGeometry,
 		TorusKnotGeometry: TorusKnotGeometry,
+		wrap_TubeGeometry: wrap_TubeGeometry,
 		TubeGeometry: TubeGeometry,
+		wrap_WireframeGeometry: wrap_WireframeGeometry,
 		WireframeGeometry: WireframeGeometry
 	});
 
 	// #PROXY1.0.0 Classes:ShadowMaterial Uses:
-	const ShadowMaterial = PROXY.CTOR(orig_ShadowMaterial, "ShadowMaterial");
 
-	class orig_ShadowMaterial extends Material {
+	class ShadowMaterial extends Material {
 		constructor(parameters) {
 			super();
 			this.isShadowMaterial = true;
@@ -26785,10 +27301,14 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:RawShaderMaterial Uses:
-	const RawShaderMaterial = PROXY.CTOR(orig_RawShaderMaterial, "RawShaderMaterial");
+	function wrap_ShadowMaterial() {
+		return PROXY.wrap(ShadowMaterial, arguments);
+	}
+	PROXY.init(ShadowMaterial);
 
-	class orig_RawShaderMaterial extends ShaderMaterial {
+	// #PROXY1.0.0 Classes:RawShaderMaterial Uses:
+
+	class RawShaderMaterial extends ShaderMaterial {
 		constructor(parameters) {
 			super(parameters);
 			this.isRawShaderMaterial = true;
@@ -26797,10 +27317,14 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:MeshStandardMaterial Uses:
-	const MeshStandardMaterial = PROXY.CTOR(orig_MeshStandardMaterial, "MeshStandardMaterial");
+	function wrap_RawShaderMaterial() {
+		return PROXY.wrap(RawShaderMaterial, arguments);
+	}
+	PROXY.init(RawShaderMaterial);
 
-	class orig_MeshStandardMaterial extends Material {
+	// #PROXY1.0.0 Classes:MeshStandardMaterial Uses:
+
+	class MeshStandardMaterial extends Material {
 		constructor(parameters) {
 			super();
 			this.isMeshStandardMaterial = true;
@@ -26882,10 +27406,14 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:MeshPhysicalMaterial Uses:
-	const MeshPhysicalMaterial = PROXY.CTOR(orig_MeshPhysicalMaterial, "MeshPhysicalMaterial");
+	function wrap_MeshStandardMaterial() {
+		return PROXY.wrap(MeshStandardMaterial, arguments);
+	}
+	PROXY.init(MeshStandardMaterial);
 
-	class orig_MeshPhysicalMaterial extends MeshStandardMaterial {
+	// #PROXY1.0.0 Classes:MeshPhysicalMaterial Uses:
+
+	class MeshPhysicalMaterial extends MeshStandardMaterial {
 		constructor(parameters) {
 			super();
 			this.isMeshPhysicalMaterial = true;
@@ -27018,10 +27546,14 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:MeshPhongMaterial Uses:
-	const MeshPhongMaterial = PROXY.CTOR(orig_MeshPhongMaterial, "MeshPhongMaterial");
+	function wrap_MeshPhysicalMaterial() {
+		return PROXY.wrap(MeshPhysicalMaterial, arguments);
+	}
+	PROXY.init(MeshPhysicalMaterial);
 
-	class orig_MeshPhongMaterial extends Material {
+	// #PROXY1.0.0 Classes:MeshPhongMaterial Uses:
+
+	class MeshPhongMaterial extends Material {
 		constructor(parameters) {
 			super();
 			this.isMeshPhongMaterial = true;
@@ -27099,10 +27631,14 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:MeshToonMaterial Uses:
-	const MeshToonMaterial = PROXY.CTOR(orig_MeshToonMaterial, "MeshToonMaterial");
+	function wrap_MeshPhongMaterial() {
+		return PROXY.wrap(MeshPhongMaterial, arguments);
+	}
+	PROXY.init(MeshPhongMaterial);
 
-	class orig_MeshToonMaterial extends Material {
+	// #PROXY1.0.0 Classes:MeshToonMaterial Uses:
+
+	class MeshToonMaterial extends Material {
 		constructor(parameters) {
 			super();
 			this.isMeshToonMaterial = true;
@@ -27168,10 +27704,14 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:MeshNormalMaterial Uses:
-	const MeshNormalMaterial = PROXY.CTOR(orig_MeshNormalMaterial, "MeshNormalMaterial");
+	function wrap_MeshToonMaterial() {
+		return PROXY.wrap(MeshToonMaterial, arguments);
+	}
+	PROXY.init(MeshToonMaterial);
 
-	class orig_MeshNormalMaterial extends Material {
+	// #PROXY1.0.0 Classes:MeshNormalMaterial Uses:
+
+	class MeshNormalMaterial extends Material {
 		constructor(parameters) {
 			super();
 			this.isMeshNormalMaterial = true;
@@ -27208,10 +27748,14 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:MeshLambertMaterial Uses:
-	const MeshLambertMaterial = PROXY.CTOR(orig_MeshLambertMaterial, "MeshLambertMaterial");
+	function wrap_MeshNormalMaterial() {
+		return PROXY.wrap(MeshNormalMaterial, arguments);
+	}
+	PROXY.init(MeshNormalMaterial);
 
-	class orig_MeshLambertMaterial extends Material {
+	// #PROXY1.0.0 Classes:MeshLambertMaterial Uses:
+
+	class MeshLambertMaterial extends Material {
 		constructor(parameters) {
 			super();
 			this.isMeshLambertMaterial = true;
@@ -27285,10 +27829,14 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:MeshMatcapMaterial Uses:
-	const MeshMatcapMaterial = PROXY.CTOR(orig_MeshMatcapMaterial, "MeshMatcapMaterial");
+	function wrap_MeshLambertMaterial() {
+		return PROXY.wrap(MeshLambertMaterial, arguments);
+	}
+	PROXY.init(MeshLambertMaterial);
 
-	class orig_MeshMatcapMaterial extends Material {
+	// #PROXY1.0.0 Classes:MeshMatcapMaterial Uses:
+
+	class MeshMatcapMaterial extends Material {
 		constructor(parameters) {
 			super();
 			this.isMeshMatcapMaterial = true;
@@ -27338,10 +27886,14 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:LineDashedMaterial Uses:
-	const LineDashedMaterial = PROXY.CTOR(orig_LineDashedMaterial, "LineDashedMaterial");
+	function wrap_MeshMatcapMaterial() {
+		return PROXY.wrap(MeshMatcapMaterial, arguments);
+	}
+	PROXY.init(MeshMatcapMaterial);
 
-	class orig_LineDashedMaterial extends LineBasicMaterial {
+	// #PROXY1.0.0 Classes:LineDashedMaterial Uses:
+
+	class LineDashedMaterial extends LineBasicMaterial {
 		constructor(parameters) {
 			super();
 			this.isLineDashedMaterial = true;
@@ -27361,6 +27913,11 @@
 		}
 
 	}
+
+	function wrap_LineDashedMaterial() {
+		return PROXY.wrap(LineDashedMaterial, arguments);
+	}
+	PROXY.init(LineDashedMaterial);
 
 	function arraySlice(array, from, to) {
 		if (isTypedArray(array)) {
@@ -29038,7 +29595,6 @@
 	}
 
 	// #PROXY1.0.0 Classes:CompressedTextureLoader Uses:CompressedTexture
-	const proxy_CompressedTexture_in_CompressedTextureLoader = PROXY.Owned(CompressedTexture, "CompressedTextureLoader");
 	/**
 	 * Abstract Base class to block based textures loader (dds, pvr, ...)
 	 *
@@ -29053,7 +29609,10 @@
 		load(url, onLoad, onProgress, onError) {
 			const scope = this;
 			const images = [];
-			const texture = new proxy_CompressedTexture_in_CompressedTextureLoader();
+			const texture = new PROXY.internal({
+				c: CompressedTexture,
+				w: 'CompressedTextureLoader'
+			});
 			const loader = new FileLoader(this.manager);
 			loader.setPath(this.path);
 			loader.setResponseType('arraybuffer');
@@ -29185,7 +29744,6 @@
 	}
 
 	// #PROXY1.0.0 Classes:CubeTextureLoader Uses:CubeTexture
-	const proxy_CubeTexture_in_CubeTextureLoader = PROXY.Owned(CubeTexture, "CubeTextureLoader");
 
 	class CubeTextureLoader extends Loader {
 		constructor(manager) {
@@ -29193,7 +29751,10 @@
 		}
 
 		load(urls, onLoad, onProgress, onError) {
-			const texture = new proxy_CubeTexture_in_CubeTextureLoader();
+			const texture = new PROXY.internal({
+				c: CubeTexture,
+				w: 'CubeTextureLoader'
+			});
 			const loader = new ImageLoader(this.manager);
 			loader.setCrossOrigin(this.crossOrigin);
 			loader.setPath(this.path);
@@ -29221,7 +29782,6 @@
 	}
 
 	// #PROXY1.0.0 Classes:DataTextureLoader Uses:DataTexture
-	const proxy_DataTexture_in_DataTextureLoader = PROXY.Owned(DataTexture, "DataTextureLoader");
 	/**
 	 * Abstract Base class to load generic binary textures formats (rgbe, hdr, ...)
 	 *
@@ -29235,7 +29795,10 @@
 
 		load(url, onLoad, onProgress, onError) {
 			const scope = this;
-			const texture = new proxy_DataTexture_in_DataTextureLoader();
+			const texture = new PROXY.internal({
+				c: DataTexture,
+				w: 'DataTextureLoader'
+			});
 			const loader = new FileLoader(this.manager);
 			loader.setResponseType('arraybuffer');
 			loader.setRequestHeader(this.requestHeader);
@@ -29297,7 +29860,6 @@
 	}
 
 	// #PROXY1.0.0 Classes:TextureLoader Uses:Texture
-	const proxy_Texture_in_TextureLoader = PROXY.Owned(Texture, "TextureLoader");
 
 	class TextureLoader extends Loader {
 		constructor(manager) {
@@ -29305,7 +29867,10 @@
 		}
 
 		load(url, onLoad, onProgress, onError) {
-			const texture = new proxy_Texture_in_TextureLoader();
+			const texture = new PROXY.internal({
+				c: Texture,
+				w: 'TextureLoader'
+			});
 			const loader = new ImageLoader(this.manager);
 			loader.setCrossOrigin(this.crossOrigin);
 			loader.setPath(this.path);
@@ -29323,9 +29888,8 @@
 	}
 
 	// #PROXY1.0.0 Classes:Light Uses:
-	const Light = PROXY.CTOR(orig_Light, "Light");
 
-	class orig_Light extends Object3D {
+	class Light extends Object3D {
 		constructor(color, intensity = 1) {
 			super();
 			this.isLight = true;
@@ -29359,10 +29923,14 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:HemisphereLight Uses:
-	const HemisphereLight = PROXY.CTOR(orig_HemisphereLight, "HemisphereLight");
+	function wrap_Light() {
+		return PROXY.wrap(Light, arguments);
+	}
+	PROXY.init(Light);
 
-	class orig_HemisphereLight extends Light {
+	// #PROXY1.0.0 Classes:HemisphereLight Uses:
+
+	class HemisphereLight extends Light {
 		constructor(skyColor, groundColor, intensity) {
 			super(skyColor, intensity);
 			this.isHemisphereLight = true;
@@ -29380,8 +29948,12 @@
 
 	}
 
+	function wrap_HemisphereLight() {
+		return PROXY.wrap(HemisphereLight, arguments);
+	}
+	PROXY.init(HemisphereLight);
+
 	// #PROXY1.0.0 Classes:LightShadow Uses:
-	const LightShadow = PROXY.CTOR(orig_LightShadow, "LightShadow");
 
 	const _projScreenMatrix$1 = /*@__PURE__*/new Matrix4();
 
@@ -29389,7 +29961,7 @@
 
 	const _lookTarget$1 = /*@__PURE__*/new Vector3();
 
-	class orig_LightShadow {
+	class LightShadow {
 		constructor(camera) {
 			this.camera = camera;
 			this.bias = 0;
@@ -29481,13 +30053,19 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:SpotLightShadow Uses:PerspectiveCamera
-	const SpotLightShadow = PROXY.CTOR(orig_SpotLightShadow, "SpotLightShadow");
-	const proxy_PerspectiveCamera_in_SpotLightShadow = PROXY.Owned(PerspectiveCamera, "SpotLightShadow");
+	function wrap_LightShadow() {
+		return PROXY.wrap(LightShadow, arguments);
+	}
+	PROXY.init(LightShadow);
 
-	class orig_SpotLightShadow extends LightShadow {
+	// #PROXY1.0.0 Classes:SpotLightShadow Uses:PerspectiveCamera
+
+	class SpotLightShadow extends LightShadow {
 		constructor() {
-			super(new proxy_PerspectiveCamera_in_SpotLightShadow(50, 1, 0.5, 500));
+			super(new PROXY.internal({
+				c: PerspectiveCamera,
+				w: 'SpotLightShadow'
+			}, 50, 1, 0.5, 500));
 			this.isSpotLightShadow = true;
 			this.focus = 1;
 		}
@@ -29516,26 +30094,34 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:SpotLight Uses:Object3D,SpotLightShadow
-	const SpotLight = PROXY.CTOR(orig_SpotLight, "SpotLight");
-	const proxy_Object3D_in_SpotLight = PROXY.Owned(Object3D, "SpotLight");
-	const proxy_SpotLightShadow_in_SpotLight = PROXY.Owned(SpotLightShadow, "SpotLight");
+	function wrap_SpotLightShadow() {
+		return PROXY.wrap(SpotLightShadow, arguments);
+	}
+	PROXY.init(SpotLightShadow);
 
-	class orig_SpotLight extends Light {
+	// #PROXY1.0.0 Classes:SpotLight Uses:Object3D,SpotLightShadow
+
+	class SpotLight extends Light {
 		constructor(color, intensity, distance = 0, angle = Math.PI / 3, penumbra = 0, decay = 1) {
 			super(color, intensity);
 			this.isSpotLight = true;
 			this.type = 'SpotLight';
 			this.position.copy(Object3D.DefaultUp);
 			this.updateMatrix();
-			this.target = new proxy_Object3D_in_SpotLight();
+			this.target = new PROXY.internal({
+				c: Object3D,
+				w: 'SpotLight'
+			});
 			this.distance = distance;
 			this.angle = angle;
 			this.penumbra = penumbra;
 			this.decay = decay; // for physically correct lights, should be 2.
 
 			this.map = null;
-			this.shadow = new proxy_SpotLightShadow_in_SpotLight();
+			this.shadow = new PROXY.internal({
+				c: SpotLightShadow,
+				w: 'SpotLight'
+			});
 		}
 
 		get power() {
@@ -29566,9 +30152,12 @@
 
 	}
 
+	function wrap_SpotLight() {
+		return PROXY.wrap(SpotLight, arguments);
+	}
+	PROXY.init(SpotLight);
+
 	// #PROXY1.0.0 Classes:PointLightShadow Uses:PerspectiveCamera
-	const PointLightShadow = PROXY.CTOR(orig_PointLightShadow, "PointLightShadow");
-	const proxy_PerspectiveCamera_in_PointLightShadow = PROXY.Owned(PerspectiveCamera, "PointLightShadow");
 
 	const _projScreenMatrix = /*@__PURE__*/new Matrix4();
 
@@ -29576,9 +30165,12 @@
 
 	const _lookTarget = /*@__PURE__*/new Vector3();
 
-	class orig_PointLightShadow extends LightShadow {
+	class PointLightShadow extends LightShadow {
 		constructor() {
-			super(new proxy_PerspectiveCamera_in_PointLightShadow(90, 1, 0.5, 500));
+			super(new PROXY.internal({
+				c: PerspectiveCamera,
+				w: 'PointLightShadow'
+			}, 90, 1, 0.5, 500));
 			this.isPointLightShadow = true;
 			this._frameExtents = new Vector2(4, 2);
 			this._viewportCount = 6;
@@ -29635,11 +30227,14 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:PointLight Uses:PointLightShadow
-	const PointLight = PROXY.CTOR(orig_PointLight, "PointLight");
-	const proxy_PointLightShadow_in_PointLight = PROXY.Owned(PointLightShadow, "PointLight");
+	function wrap_PointLightShadow() {
+		return PROXY.wrap(PointLightShadow, arguments);
+	}
+	PROXY.init(PointLightShadow);
 
-	class orig_PointLight extends Light {
+	// #PROXY1.0.0 Classes:PointLight Uses:PointLightShadow
+
+	class PointLight extends Light {
 		constructor(color, intensity, distance = 0, decay = 1) {
 			super(color, intensity);
 			this.isPointLight = true;
@@ -29647,7 +30242,10 @@
 			this.distance = distance;
 			this.decay = decay; // for physically correct lights, should be 2.
 
-			this.shadow = new proxy_PointLightShadow_in_PointLight();
+			this.shadow = new PROXY.internal({
+				c: PointLightShadow,
+				w: 'PointLight'
+			});
 		}
 
 		get power() {
@@ -29675,32 +30273,46 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:DirectionalLightShadow Uses:OrthographicCamera
-	const DirectionalLightShadow = PROXY.CTOR(orig_DirectionalLightShadow, "DirectionalLightShadow");
-	const proxy_OrthographicCamera_in_DirectionalLightShadow = PROXY.Owned(OrthographicCamera, "DirectionalLightShadow");
+	function wrap_PointLight() {
+		return PROXY.wrap(PointLight, arguments);
+	}
+	PROXY.init(PointLight);
 
-	class orig_DirectionalLightShadow extends LightShadow {
+	// #PROXY1.0.0 Classes:DirectionalLightShadow Uses:OrthographicCamera
+
+	class DirectionalLightShadow extends LightShadow {
 		constructor() {
-			super(new proxy_OrthographicCamera_in_DirectionalLightShadow(-5, 5, 5, -5, 0.5, 500));
+			super(new PROXY.internal({
+				c: OrthographicCamera,
+				w: 'DirectionalLightShadow'
+			}, -5, 5, 5, -5, 0.5, 500));
 			this.isDirectionalLightShadow = true;
 		}
 
 	}
 
-	// #PROXY1.0.0 Classes:DirectionalLight Uses:Object3D,DirectionalLightShadow
-	const DirectionalLight = PROXY.CTOR(orig_DirectionalLight, "DirectionalLight");
-	const proxy_Object3D_in_DirectionalLight = PROXY.Owned(Object3D, "DirectionalLight");
-	const proxy_DirectionalLightShadow_in_DirectionalLight = PROXY.Owned(DirectionalLightShadow, "DirectionalLight");
+	function wrap_DirectionalLightShadow() {
+		return PROXY.wrap(DirectionalLightShadow, arguments);
+	}
+	PROXY.init(DirectionalLightShadow);
 
-	class orig_DirectionalLight extends Light {
+	// #PROXY1.0.0 Classes:DirectionalLight Uses:Object3D,DirectionalLightShadow
+
+	class DirectionalLight extends Light {
 		constructor(color, intensity) {
 			super(color, intensity);
 			this.isDirectionalLight = true;
 			this.type = 'DirectionalLight';
 			this.position.copy(Object3D.DefaultUp);
 			this.updateMatrix();
-			this.target = new proxy_Object3D_in_DirectionalLight();
-			this.shadow = new proxy_DirectionalLightShadow_in_DirectionalLight();
+			this.target = new PROXY.internal({
+				c: Object3D,
+				w: 'DirectionalLight'
+			});
+			this.shadow = new PROXY.internal({
+				c: DirectionalLightShadow,
+				w: 'DirectionalLight'
+			});
 		}
 
 		dispose() {
@@ -29716,10 +30328,14 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:AmbientLight Uses:
-	const AmbientLight = PROXY.CTOR(orig_AmbientLight, "AmbientLight");
+	function wrap_DirectionalLight() {
+		return PROXY.wrap(DirectionalLight, arguments);
+	}
+	PROXY.init(DirectionalLight);
 
-	class orig_AmbientLight extends Light {
+	// #PROXY1.0.0 Classes:AmbientLight Uses:
+
+	class AmbientLight extends Light {
 		constructor(color, intensity) {
 			super(color, intensity);
 			this.isAmbientLight = true;
@@ -29728,10 +30344,14 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:RectAreaLight Uses:
-	const RectAreaLight = PROXY.CTOR(orig_RectAreaLight, "RectAreaLight");
+	function wrap_AmbientLight() {
+		return PROXY.wrap(AmbientLight, arguments);
+	}
+	PROXY.init(AmbientLight);
 
-	class orig_RectAreaLight extends Light {
+	// #PROXY1.0.0 Classes:RectAreaLight Uses:
+
+	class RectAreaLight extends Light {
 		constructor(color, intensity, width = 10, height = 10) {
 			super(color, intensity);
 			this.isRectAreaLight = true;
@@ -29765,6 +30385,11 @@
 		}
 
 	}
+
+	function wrap_RectAreaLight() {
+		return PROXY.wrap(RectAreaLight, arguments);
+	}
+	PROXY.init(RectAreaLight);
 
 	/**
 	 * Primary reference:
@@ -29947,9 +30572,8 @@
 	}
 
 	// #PROXY1.0.0 Classes:LightProbe Uses:
-	const LightProbe = PROXY.CTOR(orig_LightProbe, "LightProbe");
 
-	class orig_LightProbe extends Light {
+	class LightProbe extends Light {
 		constructor(sh = new SphericalHarmonics3(), intensity = 1) {
 			super(undefined, intensity);
 			this.isLightProbe = true;
@@ -29976,6 +30600,11 @@
 		}
 
 	}
+
+	function wrap_LightProbe() {
+		return PROXY.wrap(LightProbe, arguments);
+	}
+	PROXY.init(LightProbe);
 
 	class MaterialLoader extends Loader {
 		constructor(manager) {
@@ -30274,9 +30903,8 @@
 	}
 
 	// #PROXY1.0.0 Classes:InstancedBufferGeometry Uses:
-	const InstancedBufferGeometry = PROXY.CTOR(orig_InstancedBufferGeometry, "InstancedBufferGeometry");
 
-	class orig_InstancedBufferGeometry extends BufferGeometry {
+	class InstancedBufferGeometry extends BufferGeometry {
 		constructor() {
 			super();
 			this.isInstancedBufferGeometry = true;
@@ -30303,9 +30931,12 @@
 
 	}
 
+	function wrap_InstancedBufferGeometry() {
+		return PROXY.wrap(InstancedBufferGeometry, arguments);
+	}
+	PROXY.init(InstancedBufferGeometry);
+
 	// #PROXY1.0.0 Classes:BufferGeometryLoader Uses:InstancedBufferGeometry,BufferGeometry
-	const proxy_InstancedBufferGeometry_in_BufferGeometryLoader = PROXY.Owned(InstancedBufferGeometry, "BufferGeometryLoader");
-	const proxy_BufferGeometry_in_BufferGeometryLoader = PROXY.Owned(BufferGeometry, "BufferGeometryLoader");
 
 	class BufferGeometryLoader extends Loader {
 		constructor(manager) {
@@ -30358,7 +30989,13 @@
 				return ab;
 			}
 
-			const geometry = json.isInstancedBufferGeometry ? new proxy_InstancedBufferGeometry_in_BufferGeometryLoader() : new proxy_BufferGeometry_in_BufferGeometryLoader();
+			const geometry = json.isInstancedBufferGeometry ? new PROXY.internal({
+				c: InstancedBufferGeometry,
+				w: 'BufferGeometryLoader'
+			}) : new PROXY.internal({
+				c: BufferGeometry,
+				w: 'BufferGeometryLoader'
+			});
 			const index = json.data.index;
 
 			if (index !== undefined) {
@@ -30454,31 +31091,6 @@
 	}
 
 	// #PROXY1.0.0 Classes:ObjectLoader Uses:Skeleton,DataTexture,CubeTexture,Texture,Scene,PerspectiveCamera,OrthographicCamera,AmbientLight,DirectionalLight,PointLight,RectAreaLight,SpotLight,HemisphereLight,LightProbe,SkinnedMesh,Mesh,LOD,Line,LineLoop,LineSegments,Points,Sprite,Group,Bone,Object3D
-	const proxy_Skeleton_in_ObjectLoader = PROXY.Owned(Skeleton, "ObjectLoader");
-	const proxy_DataTexture_in_ObjectLoader = PROXY.Owned(DataTexture, "ObjectLoader");
-	const proxy_CubeTexture_in_ObjectLoader = PROXY.Owned(CubeTexture, "ObjectLoader");
-	const proxy_Texture_in_ObjectLoader = PROXY.Owned(Texture, "ObjectLoader");
-	const proxy_Scene_in_ObjectLoader = PROXY.Owned(Scene, "ObjectLoader");
-	const proxy_PerspectiveCamera_in_ObjectLoader = PROXY.Owned(PerspectiveCamera, "ObjectLoader");
-	const proxy_OrthographicCamera_in_ObjectLoader = PROXY.Owned(OrthographicCamera, "ObjectLoader");
-	const proxy_AmbientLight_in_ObjectLoader = PROXY.Owned(AmbientLight, "ObjectLoader");
-	const proxy_DirectionalLight_in_ObjectLoader = PROXY.Owned(DirectionalLight, "ObjectLoader");
-	const proxy_PointLight_in_ObjectLoader = PROXY.Owned(PointLight, "ObjectLoader");
-	const proxy_RectAreaLight_in_ObjectLoader = PROXY.Owned(RectAreaLight, "ObjectLoader");
-	const proxy_SpotLight_in_ObjectLoader = PROXY.Owned(SpotLight, "ObjectLoader");
-	const proxy_HemisphereLight_in_ObjectLoader = PROXY.Owned(HemisphereLight, "ObjectLoader");
-	const proxy_LightProbe_in_ObjectLoader = PROXY.Owned(LightProbe, "ObjectLoader");
-	const proxy_SkinnedMesh_in_ObjectLoader = PROXY.Owned(SkinnedMesh, "ObjectLoader");
-	const proxy_Mesh_in_ObjectLoader = PROXY.Owned(Mesh, "ObjectLoader");
-	const proxy_LOD_in_ObjectLoader = PROXY.Owned(LOD, "ObjectLoader");
-	const proxy_Line_in_ObjectLoader = PROXY.Owned(Line, "ObjectLoader");
-	const proxy_LineLoop_in_ObjectLoader = PROXY.Owned(LineLoop, "ObjectLoader");
-	const proxy_LineSegments_in_ObjectLoader = PROXY.Owned(LineSegments, "ObjectLoader");
-	const proxy_Points_in_ObjectLoader = PROXY.Owned(Points, "ObjectLoader");
-	const proxy_Sprite_in_ObjectLoader = PROXY.Owned(Sprite, "ObjectLoader");
-	const proxy_Group_in_ObjectLoader = PROXY.Owned(Group, "ObjectLoader");
-	const proxy_Bone_in_ObjectLoader = PROXY.Owned(Bone, "ObjectLoader");
-	const proxy_Object3D_in_ObjectLoader = PROXY.Owned(Object3D, "ObjectLoader");
 
 	class ObjectLoader extends Loader {
 		constructor(manager) {
@@ -30599,7 +31211,10 @@
 
 			if (json !== undefined) {
 				for (let i = 0, l = json.length; i < l; i++) {
-					const skeleton = new proxy_Skeleton_in_ObjectLoader().fromJSON(json[i], bones);
+					const skeleton = new PROXY.internal({
+						c: Skeleton,
+						w: 'ObjectLoader'
+					}).fromJSON(json[i], bones);
 					skeletons[skeleton.uuid] = skeleton;
 				}
 			}
@@ -30734,7 +31349,10 @@
 									imageArray.push(deserializedImage);
 								} else {
 									// special case: handle array of data textures for cube textures
-									imageArray.push(new proxy_DataTexture_in_ObjectLoader(deserializedImage.data, deserializedImage.width, deserializedImage.height));
+									imageArray.push(new PROXY.internal({
+										c: DataTexture,
+										w: 'ObjectLoader'
+									}, deserializedImage.data, deserializedImage.width, deserializedImage.height));
 								}
 							}
 						}
@@ -30795,7 +31413,10 @@
 									imageArray.push(deserializedImage);
 								} else {
 									// special case: handle array of data textures for cube textures
-									imageArray.push(new proxy_DataTexture_in_ObjectLoader(deserializedImage.data, deserializedImage.width, deserializedImage.height));
+									imageArray.push(new PROXY.internal({
+										c: DataTexture,
+										w: 'ObjectLoader'
+									}, deserializedImage.data, deserializedImage.width, deserializedImage.height));
 								}
 							}
 						}
@@ -30838,13 +31459,22 @@
 					let texture;
 
 					if (Array.isArray(image)) {
-						texture = new proxy_CubeTexture_in_ObjectLoader();
+						texture = new PROXY.internal({
+							c: CubeTexture,
+							w: 'ObjectLoader'
+						});
 						if (image.length === 6) texture.needsUpdate = true;
 					} else {
 						if (image && image.data) {
-							texture = new proxy_DataTexture_in_ObjectLoader();
+							texture = new PROXY.internal({
+								c: DataTexture,
+								w: 'ObjectLoader'
+							});
 						} else {
-							texture = new proxy_Texture_in_ObjectLoader();
+							texture = new PROXY.internal({
+								c: Texture,
+								w: 'ObjectLoader'
+							});
 						}
 
 						if (image) texture.needsUpdate = true; // textures can have undefined image data
@@ -30930,7 +31560,10 @@
 
 			switch (data.type) {
 				case 'Scene':
-					object = new proxy_Scene_in_ObjectLoader();
+					object = new PROXY.internal({
+						c: Scene,
+						w: 'ObjectLoader'
+					});
 
 					if (data.background !== undefined) {
 						if (Number.isInteger(data.background)) {
@@ -30955,7 +31588,10 @@
 					break;
 
 				case 'PerspectiveCamera':
-					object = new proxy_PerspectiveCamera_in_ObjectLoader(data.fov, data.aspect, data.near, data.far);
+					object = new PROXY.internal({
+						c: PerspectiveCamera,
+						w: 'ObjectLoader'
+					}, data.fov, data.aspect, data.near, data.far);
 					if (data.focus !== undefined) object.focus = data.focus;
 					if (data.zoom !== undefined) object.zoom = data.zoom;
 					if (data.filmGauge !== undefined) object.filmGauge = data.filmGauge;
@@ -30964,43 +31600,70 @@
 					break;
 
 				case 'OrthographicCamera':
-					object = new proxy_OrthographicCamera_in_ObjectLoader(data.left, data.right, data.top, data.bottom, data.near, data.far);
+					object = new PROXY.internal({
+						c: OrthographicCamera,
+						w: 'ObjectLoader'
+					}, data.left, data.right, data.top, data.bottom, data.near, data.far);
 					if (data.zoom !== undefined) object.zoom = data.zoom;
 					if (data.view !== undefined) object.view = Object.assign({}, data.view);
 					break;
 
 				case 'AmbientLight':
-					object = new proxy_AmbientLight_in_ObjectLoader(data.color, data.intensity);
+					object = new PROXY.internal({
+						c: AmbientLight,
+						w: 'ObjectLoader'
+					}, data.color, data.intensity);
 					break;
 
 				case 'DirectionalLight':
-					object = new proxy_DirectionalLight_in_ObjectLoader(data.color, data.intensity);
+					object = new PROXY.internal({
+						c: DirectionalLight,
+						w: 'ObjectLoader'
+					}, data.color, data.intensity);
 					break;
 
 				case 'PointLight':
-					object = new proxy_PointLight_in_ObjectLoader(data.color, data.intensity, data.distance, data.decay);
+					object = new PROXY.internal({
+						c: PointLight,
+						w: 'ObjectLoader'
+					}, data.color, data.intensity, data.distance, data.decay);
 					break;
 
 				case 'RectAreaLight':
-					object = new proxy_RectAreaLight_in_ObjectLoader(data.color, data.intensity, data.width, data.height);
+					object = new PROXY.internal({
+						c: RectAreaLight,
+						w: 'ObjectLoader'
+					}, data.color, data.intensity, data.width, data.height);
 					break;
 
 				case 'SpotLight':
-					object = new proxy_SpotLight_in_ObjectLoader(data.color, data.intensity, data.distance, data.angle, data.penumbra, data.decay);
+					object = new PROXY.internal({
+						c: SpotLight,
+						w: 'ObjectLoader'
+					}, data.color, data.intensity, data.distance, data.angle, data.penumbra, data.decay);
 					break;
 
 				case 'HemisphereLight':
-					object = new proxy_HemisphereLight_in_ObjectLoader(data.color, data.groundColor, data.intensity);
+					object = new PROXY.internal({
+						c: HemisphereLight,
+						w: 'ObjectLoader'
+					}, data.color, data.groundColor, data.intensity);
 					break;
 
 				case 'LightProbe':
-					object = new proxy_LightProbe_in_ObjectLoader().fromJSON(data);
+					object = new PROXY.internal({
+						c: LightProbe,
+						w: 'ObjectLoader'
+					}).fromJSON(data);
 					break;
 
 				case 'SkinnedMesh':
 					geometry = getGeometry(data.geometry);
 					material = getMaterial(data.material);
-					object = new proxy_SkinnedMesh_in_ObjectLoader(geometry, material);
+					object = new PROXY.internal({
+						c: SkinnedMesh,
+						w: 'ObjectLoader'
+					}, geometry, material);
 					if (data.bindMode !== undefined) object.bindMode = data.bindMode;
 					if (data.bindMatrix !== undefined) object.bindMatrix.fromArray(data.bindMatrix);
 					if (data.skeleton !== undefined) object.skeleton = data.skeleton;
@@ -31009,7 +31672,10 @@
 				case 'Mesh':
 					geometry = getGeometry(data.geometry);
 					material = getMaterial(data.material);
-					object = new proxy_Mesh_in_ObjectLoader(geometry, material);
+					object = new PROXY.internal({
+						c: Mesh,
+						w: 'ObjectLoader'
+					}, geometry, material);
 					break;
 
 				case 'InstancedMesh':
@@ -31024,40 +31690,67 @@
 					break;
 
 				case 'LOD':
-					object = new proxy_LOD_in_ObjectLoader();
+					object = new PROXY.internal({
+						c: LOD,
+						w: 'ObjectLoader'
+					});
 					break;
 
 				case 'Line':
-					object = new proxy_Line_in_ObjectLoader(getGeometry(data.geometry), getMaterial(data.material));
+					object = new PROXY.internal({
+						c: Line,
+						w: 'ObjectLoader'
+					}, getGeometry(data.geometry), getMaterial(data.material));
 					break;
 
 				case 'LineLoop':
-					object = new proxy_LineLoop_in_ObjectLoader(getGeometry(data.geometry), getMaterial(data.material));
+					object = new PROXY.internal({
+						c: LineLoop,
+						w: 'ObjectLoader'
+					}, getGeometry(data.geometry), getMaterial(data.material));
 					break;
 
 				case 'LineSegments':
-					object = new proxy_LineSegments_in_ObjectLoader(getGeometry(data.geometry), getMaterial(data.material));
+					object = new PROXY.internal({
+						c: LineSegments,
+						w: 'ObjectLoader'
+					}, getGeometry(data.geometry), getMaterial(data.material));
 					break;
 
 				case 'PointCloud':
 				case 'Points':
-					object = new proxy_Points_in_ObjectLoader(getGeometry(data.geometry), getMaterial(data.material));
+					object = new PROXY.internal({
+						c: Points,
+						w: 'ObjectLoader'
+					}, getGeometry(data.geometry), getMaterial(data.material));
 					break;
 
 				case 'Sprite':
-					object = new proxy_Sprite_in_ObjectLoader(getMaterial(data.material));
+					object = new PROXY.internal({
+						c: Sprite,
+						w: 'ObjectLoader'
+					}, getMaterial(data.material));
 					break;
 
 				case 'Group':
-					object = new proxy_Group_in_ObjectLoader();
+					object = new PROXY.internal({
+						c: Group,
+						w: 'ObjectLoader'
+					});
 					break;
 
 				case 'Bone':
-					object = new proxy_Bone_in_ObjectLoader();
+					object = new PROXY.internal({
+						c: Bone,
+						w: 'ObjectLoader'
+					});
 					break;
 
 				default:
-					object = new proxy_Object3D_in_ObjectLoader();
+					object = new PROXY.internal({
+						c: Object3D,
+						w: 'ObjectLoader'
+					});
 			}
 
 			object.uuid = data.uuid;
@@ -31277,9 +31970,8 @@
 	}
 
 	// #PROXY1.0.0 Classes:HemisphereLightProbe Uses:
-	const HemisphereLightProbe = PROXY.CTOR(orig_HemisphereLightProbe, "HemisphereLightProbe");
 
-	class orig_HemisphereLightProbe extends LightProbe {
+	class HemisphereLightProbe extends LightProbe {
 		constructor(skyColor, groundColor, intensity = 1) {
 			super(undefined, intensity);
 			this.isHemisphereLightProbe = true;
@@ -31296,10 +31988,14 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:AmbientLightProbe Uses:
-	const AmbientLightProbe = PROXY.CTOR(orig_AmbientLightProbe, "AmbientLightProbe");
+	function wrap_HemisphereLightProbe() {
+		return PROXY.wrap(HemisphereLightProbe, arguments);
+	}
+	PROXY.init(HemisphereLightProbe);
 
-	class orig_AmbientLightProbe extends LightProbe {
+	// #PROXY1.0.0 Classes:AmbientLightProbe Uses:
+
+	class AmbientLightProbe extends LightProbe {
 		constructor(color, intensity = 1) {
 			super(undefined, intensity);
 			this.isAmbientLightProbe = true;
@@ -31310,8 +32006,12 @@
 
 	}
 
+	function wrap_AmbientLightProbe() {
+		return PROXY.wrap(AmbientLightProbe, arguments);
+	}
+	PROXY.init(AmbientLightProbe);
+
 	// #PROXY1.0.0 Classes:StereoCamera Uses:PerspectiveCamera
-	const proxy_PerspectiveCamera_in_StereoCamera = PROXY.Owned(PerspectiveCamera, "StereoCamera");
 
 	const _eyeRight = /*@__PURE__*/new Matrix4();
 
@@ -31324,10 +32024,16 @@
 			this.type = 'StereoCamera';
 			this.aspect = 1;
 			this.eyeSep = 0.064;
-			this.cameraL = new proxy_PerspectiveCamera_in_StereoCamera();
+			this.cameraL = new PROXY.internal({
+				c: PerspectiveCamera,
+				w: 'StereoCamera'
+			});
 			this.cameraL.layers.enable(1);
 			this.cameraL.matrixAutoUpdate = false;
-			this.cameraR = new proxy_PerspectiveCamera_in_StereoCamera();
+			this.cameraR = new PROXY.internal({
+				c: PerspectiveCamera,
+				w: 'StereoCamera'
+			});
 			this.cameraR.layers.enable(2);
 			this.cameraR.matrixAutoUpdate = false;
 			this._cache = {
@@ -34475,14 +35181,10 @@
 	}
 
 	// #PROXY1.0.0 Classes:SpotLightHelper Uses:BufferGeometry,LineBasicMaterial,LineSegments
-	const SpotLightHelper = PROXY.CTOR(orig_SpotLightHelper, "SpotLightHelper");
-	const proxy_BufferGeometry_in_SpotLightHelper = PROXY.Owned(BufferGeometry, "SpotLightHelper");
-	const proxy_LineBasicMaterial_in_SpotLightHelper = PROXY.Owned(LineBasicMaterial, "SpotLightHelper");
-	const proxy_LineSegments_in_SpotLightHelper = PROXY.Owned(LineSegments, "SpotLightHelper");
 
 	const _vector$3 = /*@__PURE__*/new Vector3();
 
-	class orig_SpotLightHelper extends Object3D {
+	class SpotLightHelper extends Object3D {
 		constructor(light, color) {
 			super();
 			this.light = light;
@@ -34490,7 +35192,10 @@
 			this.matrix = light.matrixWorld;
 			this.matrixAutoUpdate = false;
 			this.color = color;
-			const geometry = new proxy_BufferGeometry_in_SpotLightHelper();
+			const geometry = new PROXY.internal({
+				c: BufferGeometry,
+				w: 'SpotLightHelper'
+			});
 			const positions = [0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, -1, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, -1, 1];
 
 			for (let i = 0, j = 1, l = 32; i < l; i++, j++) {
@@ -34500,11 +35205,17 @@
 			}
 
 			geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
-			const material = new proxy_LineBasicMaterial_in_SpotLightHelper({
+			const material = new PROXY.internal({
+				c: LineBasicMaterial,
+				w: 'SpotLightHelper'
+			}, {
 				fog: false,
 				toneMapped: false
 			});
-			this.cone = new proxy_LineSegments_in_SpotLightHelper(geometry, material);
+			this.cone = new PROXY.internal({
+				c: LineSegments,
+				w: 'SpotLightHelper'
+			}, geometry, material);
 			this.add(this.cone);
 			this.update();
 		}
@@ -34533,10 +35244,12 @@
 
 	}
 
+	function wrap_SpotLightHelper() {
+		return PROXY.wrap(SpotLightHelper, arguments);
+	}
+	PROXY.init(SpotLightHelper);
+
 	// #PROXY1.0.0 Classes:SkeletonHelper Uses:BufferGeometry,LineBasicMaterial
-	const SkeletonHelper = PROXY.CTOR(orig_SkeletonHelper, "SkeletonHelper");
-	const proxy_BufferGeometry_in_SkeletonHelper = PROXY.Owned(BufferGeometry, "SkeletonHelper");
-	const proxy_LineBasicMaterial_in_SkeletonHelper = PROXY.Owned(LineBasicMaterial, "SkeletonHelper");
 
 	const _vector$2 = /*@__PURE__*/new Vector3();
 
@@ -34544,10 +35257,13 @@
 
 	const _matrixWorldInv = /*@__PURE__*/new Matrix4();
 
-	class orig_SkeletonHelper extends LineSegments {
+	class SkeletonHelper extends LineSegments {
 		constructor(object) {
 			const bones = getBoneList(object);
-			const geometry = new proxy_BufferGeometry_in_SkeletonHelper();
+			const geometry = new PROXY.internal({
+				c: BufferGeometry,
+				w: 'SkeletonHelper'
+			});
 			const vertices = [];
 			const colors = [];
 			const color1 = new Color(0, 0, 1);
@@ -34566,7 +35282,10 @@
 
 			geometry.setAttribute('position', new Float32BufferAttribute(vertices, 3));
 			geometry.setAttribute('color', new Float32BufferAttribute(colors, 3));
-			const material = new proxy_LineBasicMaterial_in_SkeletonHelper({
+			const material = new PROXY.internal({
+				c: LineBasicMaterial,
+				w: 'SkeletonHelper'
+			}, {
 				vertexColors: true,
 				depthTest: false,
 				depthWrite: false,
@@ -34628,15 +35347,23 @@
 		return boneList;
 	}
 
-	// #PROXY1.0.0 Classes:PointLightHelper Uses:SphereGeometry,MeshBasicMaterial
-	const PointLightHelper = PROXY.CTOR(orig_PointLightHelper, "PointLightHelper");
-	const proxy_SphereGeometry_in_PointLightHelper = PROXY.Owned(SphereGeometry, "PointLightHelper");
-	const proxy_MeshBasicMaterial_in_PointLightHelper = PROXY.Owned(MeshBasicMaterial, "PointLightHelper");
+	function wrap_SkeletonHelper() {
+		return PROXY.wrap(SkeletonHelper, arguments);
+	}
+	PROXY.init(SkeletonHelper);
 
-	class orig_PointLightHelper extends Mesh {
+	// #PROXY1.0.0 Classes:PointLightHelper Uses:SphereGeometry,MeshBasicMaterial
+
+	class PointLightHelper extends Mesh {
 		constructor(light, sphereSize, color) {
-			const geometry = new proxy_SphereGeometry_in_PointLightHelper(sphereSize, 4, 2);
-			const material = new proxy_MeshBasicMaterial_in_PointLightHelper({
+			const geometry = new PROXY.internal({
+				c: SphereGeometry,
+				w: 'PointLightHelper'
+			}, sphereSize, 4, 2);
+			const material = new PROXY.internal({
+				c: MeshBasicMaterial,
+				w: 'PointLightHelper'
+			}, {
 				wireframe: true,
 				fog: false,
 				toneMapped: false
@@ -34690,11 +35417,12 @@
 
 	}
 
+	function wrap_PointLightHelper() {
+		return PROXY.wrap(PointLightHelper, arguments);
+	}
+	PROXY.init(PointLightHelper);
+
 	// #PROXY1.0.0 Classes:HemisphereLightHelper Uses:OctahedronGeometry,MeshBasicMaterial,Mesh
-	const HemisphereLightHelper = PROXY.CTOR(orig_HemisphereLightHelper, "HemisphereLightHelper");
-	const proxy_OctahedronGeometry_in_HemisphereLightHelper = PROXY.Owned(OctahedronGeometry, "HemisphereLightHelper");
-	const proxy_MeshBasicMaterial_in_HemisphereLightHelper = PROXY.Owned(MeshBasicMaterial, "HemisphereLightHelper");
-	const proxy_Mesh_in_HemisphereLightHelper = PROXY.Owned(Mesh, "HemisphereLightHelper");
 
 	const _vector$1 = /*@__PURE__*/new Vector3();
 
@@ -34702,7 +35430,7 @@
 
 	const _color2 = /*@__PURE__*/new Color();
 
-	class orig_HemisphereLightHelper extends Object3D {
+	class HemisphereLightHelper extends Object3D {
 		constructor(light, size, color) {
 			super();
 			this.light = light;
@@ -34710,9 +35438,15 @@
 			this.matrix = light.matrixWorld;
 			this.matrixAutoUpdate = false;
 			this.color = color;
-			const geometry = new proxy_OctahedronGeometry_in_HemisphereLightHelper(size);
+			const geometry = new PROXY.internal({
+				c: OctahedronGeometry,
+				w: 'HemisphereLightHelper'
+			}, size);
 			geometry.rotateY(Math.PI * 0.5);
-			this.material = new proxy_MeshBasicMaterial_in_HemisphereLightHelper({
+			this.material = new PROXY.internal({
+				c: MeshBasicMaterial,
+				w: 'HemisphereLightHelper'
+			}, {
 				wireframe: true,
 				fog: false,
 				toneMapped: false
@@ -34721,7 +35455,10 @@
 			const position = geometry.getAttribute('position');
 			const colors = new Float32Array(position.count * 3);
 			geometry.setAttribute('color', new BufferAttribute(colors, 3));
-			this.add(new proxy_Mesh_in_HemisphereLightHelper(geometry, this.material));
+			this.add(new PROXY.internal({
+				c: Mesh,
+				w: 'HemisphereLightHelper'
+			}, geometry, this.material));
 			this.update();
 		}
 
@@ -34755,12 +35492,14 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:GridHelper Uses:BufferGeometry,LineBasicMaterial
-	const GridHelper = PROXY.CTOR(orig_GridHelper, "GridHelper");
-	const proxy_BufferGeometry_in_GridHelper = PROXY.Owned(BufferGeometry, "GridHelper");
-	const proxy_LineBasicMaterial_in_GridHelper = PROXY.Owned(LineBasicMaterial, "GridHelper");
+	function wrap_HemisphereLightHelper() {
+		return PROXY.wrap(HemisphereLightHelper, arguments);
+	}
+	PROXY.init(HemisphereLightHelper);
 
-	class orig_GridHelper extends LineSegments {
+	// #PROXY1.0.0 Classes:GridHelper Uses:BufferGeometry,LineBasicMaterial
+
+	class GridHelper extends LineSegments {
 		constructor(size = 10, divisions = 10, color1 = 0x444444, color2 = 0x888888) {
 			color1 = new Color(color1);
 			color2 = new Color(color2);
@@ -34784,10 +35523,16 @@
 				j += 3;
 			}
 
-			const geometry = new proxy_BufferGeometry_in_GridHelper();
+			const geometry = new PROXY.internal({
+				c: BufferGeometry,
+				w: 'GridHelper'
+			});
 			geometry.setAttribute('position', new Float32BufferAttribute(vertices, 3));
 			geometry.setAttribute('color', new Float32BufferAttribute(colors, 3));
-			const material = new proxy_LineBasicMaterial_in_GridHelper({
+			const material = new PROXY.internal({
+				c: LineBasicMaterial,
+				w: 'GridHelper'
+			}, {
 				vertexColors: true,
 				toneMapped: false
 			});
@@ -34797,12 +35542,14 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:PolarGridHelper Uses:BufferGeometry,LineBasicMaterial
-	const PolarGridHelper = PROXY.CTOR(orig_PolarGridHelper, "PolarGridHelper");
-	const proxy_BufferGeometry_in_PolarGridHelper = PROXY.Owned(BufferGeometry, "PolarGridHelper");
-	const proxy_LineBasicMaterial_in_PolarGridHelper = PROXY.Owned(LineBasicMaterial, "PolarGridHelper");
+	function wrap_GridHelper() {
+		return PROXY.wrap(GridHelper, arguments);
+	}
+	PROXY.init(GridHelper);
 
-	class orig_PolarGridHelper extends LineSegments {
+	// #PROXY1.0.0 Classes:PolarGridHelper Uses:BufferGeometry,LineBasicMaterial
+
+	class PolarGridHelper extends LineSegments {
 		constructor(radius = 10, sectors = 16, rings = 8, divisions = 64, color1 = 0x444444, color2 = 0x888888) {
 			color1 = new Color(color1);
 			color2 = new Color(color2);
@@ -34843,10 +35590,16 @@
 				}
 			}
 
-			const geometry = new proxy_BufferGeometry_in_PolarGridHelper();
+			const geometry = new PROXY.internal({
+				c: BufferGeometry,
+				w: 'PolarGridHelper'
+			});
 			geometry.setAttribute('position', new Float32BufferAttribute(vertices, 3));
 			geometry.setAttribute('color', new Float32BufferAttribute(colors, 3));
-			const material = new proxy_LineBasicMaterial_in_PolarGridHelper({
+			const material = new PROXY.internal({
+				c: LineBasicMaterial,
+				w: 'PolarGridHelper'
+			}, {
 				vertexColors: true,
 				toneMapped: false
 			});
@@ -34856,11 +35609,12 @@
 
 	}
 
+	function wrap_PolarGridHelper() {
+		return PROXY.wrap(PolarGridHelper, arguments);
+	}
+	PROXY.init(PolarGridHelper);
+
 	// #PROXY1.0.0 Classes:DirectionalLightHelper Uses:BufferGeometry,LineBasicMaterial,Line
-	const DirectionalLightHelper = PROXY.CTOR(orig_DirectionalLightHelper, "DirectionalLightHelper");
-	const proxy_BufferGeometry_in_DirectionalLightHelper = PROXY.Owned(BufferGeometry, "DirectionalLightHelper");
-	const proxy_LineBasicMaterial_in_DirectionalLightHelper = PROXY.Owned(LineBasicMaterial, "DirectionalLightHelper");
-	const proxy_Line_in_DirectionalLightHelper = PROXY.Owned(Line, "DirectionalLightHelper");
 
 	const _v1 = /*@__PURE__*/new Vector3();
 
@@ -34868,7 +35622,7 @@
 
 	const _v3 = /*@__PURE__*/new Vector3();
 
-	class orig_DirectionalLightHelper extends Object3D {
+	class DirectionalLightHelper extends Object3D {
 		constructor(light, size, color) {
 			super();
 			this.light = light;
@@ -34877,17 +35631,32 @@
 			this.matrixAutoUpdate = false;
 			this.color = color;
 			if (size === undefined) size = 1;
-			let geometry = new proxy_BufferGeometry_in_DirectionalLightHelper();
+			let geometry = new PROXY.internal({
+				c: BufferGeometry,
+				w: 'DirectionalLightHelper'
+			});
 			geometry.setAttribute('position', new Float32BufferAttribute([-size, size, 0, size, size, 0, size, -size, 0, -size, -size, 0, -size, size, 0], 3));
-			const material = new proxy_LineBasicMaterial_in_DirectionalLightHelper({
+			const material = new PROXY.internal({
+				c: LineBasicMaterial,
+				w: 'DirectionalLightHelper'
+			}, {
 				fog: false,
 				toneMapped: false
 			});
-			this.lightPlane = new proxy_Line_in_DirectionalLightHelper(geometry, material);
+			this.lightPlane = new PROXY.internal({
+				c: Line,
+				w: 'DirectionalLightHelper'
+			}, geometry, material);
 			this.add(this.lightPlane);
-			geometry = new proxy_BufferGeometry_in_DirectionalLightHelper();
+			geometry = new PROXY.internal({
+				c: BufferGeometry,
+				w: 'DirectionalLightHelper'
+			});
 			geometry.setAttribute('position', new Float32BufferAttribute([0, 0, 0, 0, 0, 1], 3));
-			this.targetLine = new proxy_Line_in_DirectionalLightHelper(geometry, material);
+			this.targetLine = new PROXY.internal({
+				c: Line,
+				w: 'DirectionalLightHelper'
+			}, geometry, material);
 			this.add(this.targetLine);
 			this.update();
 		}
@@ -34922,10 +35691,12 @@
 
 	}
 
+	function wrap_DirectionalLightHelper() {
+		return PROXY.wrap(DirectionalLightHelper, arguments);
+	}
+	PROXY.init(DirectionalLightHelper);
+
 	// #PROXY1.0.0 Classes:CameraHelper Uses:BufferGeometry,LineBasicMaterial
-	const CameraHelper = PROXY.CTOR(orig_CameraHelper, "CameraHelper");
-	const proxy_BufferGeometry_in_CameraHelper = PROXY.Owned(BufferGeometry, "CameraHelper");
-	const proxy_LineBasicMaterial_in_CameraHelper = PROXY.Owned(LineBasicMaterial, "CameraHelper");
 
 	const _vector = /*@__PURE__*/new Vector3();
 
@@ -34938,10 +35709,16 @@
 	 */
 
 
-	class orig_CameraHelper extends LineSegments {
+	class CameraHelper extends LineSegments {
 		constructor(camera) {
-			const geometry = new proxy_BufferGeometry_in_CameraHelper();
-			const material = new proxy_LineBasicMaterial_in_CameraHelper({
+			const geometry = new PROXY.internal({
+				c: BufferGeometry,
+				w: 'CameraHelper'
+			});
+			const material = new PROXY.internal({
+				c: LineBasicMaterial,
+				w: 'CameraHelper'
+			}, {
 				color: 0xffffff,
 				vertexColors: true,
 				toneMapped: false
@@ -35164,21 +35941,29 @@
 		}
 	}
 
+	function wrap_CameraHelper() {
+		return PROXY.wrap(CameraHelper, arguments);
+	}
+	PROXY.init(CameraHelper);
+
 	// #PROXY1.0.0 Classes:BoxHelper Uses:BufferGeometry,LineBasicMaterial
-	const BoxHelper = PROXY.CTOR(orig_BoxHelper, "BoxHelper");
-	const proxy_BufferGeometry_in_BoxHelper = PROXY.Owned(BufferGeometry, "BoxHelper");
-	const proxy_LineBasicMaterial_in_BoxHelper = PROXY.Owned(LineBasicMaterial, "BoxHelper");
 
 	const _box = /*@__PURE__*/new Box3();
 
-	class orig_BoxHelper extends LineSegments {
+	class BoxHelper extends LineSegments {
 		constructor(object, color = 0xffff00) {
 			const indices = new Uint16Array([0, 1, 1, 2, 2, 3, 3, 0, 4, 5, 5, 6, 6, 7, 7, 4, 0, 4, 1, 5, 2, 6, 3, 7]);
 			const positions = new Float32Array(8 * 3);
-			const geometry = new proxy_BufferGeometry_in_BoxHelper();
+			const geometry = new PROXY.internal({
+				c: BufferGeometry,
+				w: 'BoxHelper'
+			});
 			geometry.setIndex(new BufferAttribute(indices, 1));
 			geometry.setAttribute('position', new BufferAttribute(positions, 3));
-			super(geometry, new proxy_LineBasicMaterial_in_BoxHelper({
+			super(geometry, new PROXY.internal({
+				c: LineBasicMaterial,
+				w: 'BoxHelper'
+			}, {
 				color: color,
 				toneMapped: false
 			}));
@@ -35259,19 +36044,27 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:Box3Helper Uses:BufferGeometry,LineBasicMaterial
-	const Box3Helper = PROXY.CTOR(orig_Box3Helper, "Box3Helper");
-	const proxy_BufferGeometry_in_Box3Helper = PROXY.Owned(BufferGeometry, "Box3Helper");
-	const proxy_LineBasicMaterial_in_Box3Helper = PROXY.Owned(LineBasicMaterial, "Box3Helper");
+	function wrap_BoxHelper() {
+		return PROXY.wrap(BoxHelper, arguments);
+	}
+	PROXY.init(BoxHelper);
 
-	class orig_Box3Helper extends LineSegments {
+	// #PROXY1.0.0 Classes:Box3Helper Uses:BufferGeometry,LineBasicMaterial
+
+	class Box3Helper extends LineSegments {
 		constructor(box, color = 0xffff00) {
 			const indices = new Uint16Array([0, 1, 1, 2, 2, 3, 3, 0, 4, 5, 5, 6, 6, 7, 7, 4, 0, 4, 1, 5, 2, 6, 3, 7]);
 			const positions = [1, 1, 1, -1, 1, 1, -1, -1, 1, 1, -1, 1, 1, 1, -1, -1, 1, -1, -1, -1, -1, 1, -1, -1];
-			const geometry = new proxy_BufferGeometry_in_Box3Helper();
+			const geometry = new PROXY.internal({
+				c: BufferGeometry,
+				w: 'Box3Helper'
+			});
 			geometry.setIndex(new BufferAttribute(indices, 1));
 			geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
-			super(geometry, new proxy_LineBasicMaterial_in_Box3Helper({
+			super(geometry, new PROXY.internal({
+				c: LineBasicMaterial,
+				w: 'Box3Helper'
+			}, {
 				color: color,
 				toneMapped: false
 			}));
@@ -35291,21 +36084,27 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:PlaneHelper Uses:BufferGeometry,LineBasicMaterial,Mesh,MeshBasicMaterial
-	const PlaneHelper = PROXY.CTOR(orig_PlaneHelper, "PlaneHelper");
-	const proxy_BufferGeometry_in_PlaneHelper = PROXY.Owned(BufferGeometry, "PlaneHelper");
-	const proxy_LineBasicMaterial_in_PlaneHelper = PROXY.Owned(LineBasicMaterial, "PlaneHelper");
-	const proxy_Mesh_in_PlaneHelper = PROXY.Owned(Mesh, "PlaneHelper");
-	const proxy_MeshBasicMaterial_in_PlaneHelper = PROXY.Owned(MeshBasicMaterial, "PlaneHelper");
+	function wrap_Box3Helper() {
+		return PROXY.wrap(Box3Helper, arguments);
+	}
+	PROXY.init(Box3Helper);
 
-	class orig_PlaneHelper extends Line {
+	// #PROXY1.0.0 Classes:PlaneHelper Uses:BufferGeometry,LineBasicMaterial,Mesh,MeshBasicMaterial
+
+	class PlaneHelper extends Line {
 		constructor(plane, size = 1, hex = 0xffff00) {
 			const color = hex;
 			const positions = [1, -1, 0, -1, 1, 0, -1, -1, 0, 1, 1, 0, -1, 1, 0, -1, -1, 0, 1, -1, 0, 1, 1, 0];
-			const geometry = new proxy_BufferGeometry_in_PlaneHelper();
+			const geometry = new PROXY.internal({
+				c: BufferGeometry,
+				w: 'PlaneHelper'
+			});
 			geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
 			geometry.computeBoundingSphere();
-			super(geometry, new proxy_LineBasicMaterial_in_PlaneHelper({
+			super(geometry, new PROXY.internal({
+				c: LineBasicMaterial,
+				w: 'PlaneHelper'
+			}, {
 				color: color,
 				toneMapped: false
 			}));
@@ -35313,10 +36112,19 @@
 			this.plane = plane;
 			this.size = size;
 			const positions2 = [1, 1, 0, -1, 1, 0, -1, -1, 0, 1, 1, 0, -1, -1, 0, 1, -1, 0];
-			const geometry2 = new proxy_BufferGeometry_in_PlaneHelper();
+			const geometry2 = new PROXY.internal({
+				c: BufferGeometry,
+				w: 'PlaneHelper'
+			});
 			geometry2.setAttribute('position', new Float32BufferAttribute(positions2, 3));
 			geometry2.computeBoundingSphere();
-			this.add(new proxy_Mesh_in_PlaneHelper(geometry2, new proxy_MeshBasicMaterial_in_PlaneHelper({
+			this.add(new PROXY.internal({
+				c: Mesh,
+				w: 'PlaneHelper'
+			}, geometry2, new PROXY.internal({
+				c: MeshBasicMaterial,
+				w: 'PlaneHelper'
+			}, {
 				color: color,
 				opacity: 0.2,
 				transparent: true,
@@ -35335,43 +36143,59 @@
 
 	}
 
+	function wrap_PlaneHelper() {
+		return PROXY.wrap(PlaneHelper, arguments);
+	}
+	PROXY.init(PlaneHelper);
+
 	// #PROXY1.0.0 Classes:ArrowHelper Uses:BufferGeometry,CylinderGeometry,Line,LineBasicMaterial,Mesh,MeshBasicMaterial
-	const ArrowHelper = PROXY.CTOR(orig_ArrowHelper, "ArrowHelper");
-	const proxy_BufferGeometry_in_ArrowHelper = PROXY.Owned(BufferGeometry, "ArrowHelper");
-	const proxy_CylinderGeometry_in_ArrowHelper = PROXY.Owned(CylinderGeometry, "ArrowHelper");
-	const proxy_Line_in_ArrowHelper = PROXY.Owned(Line, "ArrowHelper");
-	const proxy_LineBasicMaterial_in_ArrowHelper = PROXY.Owned(LineBasicMaterial, "ArrowHelper");
-	const proxy_Mesh_in_ArrowHelper = PROXY.Owned(Mesh, "ArrowHelper");
-	const proxy_MeshBasicMaterial_in_ArrowHelper = PROXY.Owned(MeshBasicMaterial, "ArrowHelper");
 
 	const _axis = /*@__PURE__*/new Vector3();
 
 	let _lineGeometry, _coneGeometry;
 
-	class orig_ArrowHelper extends Object3D {
+	class ArrowHelper extends Object3D {
 		// dir is assumed to be normalized
 		constructor(dir = new Vector3(0, 0, 1), origin = new Vector3(0, 0, 0), length = 1, color = 0xffff00, headLength = length * 0.2, headWidth = headLength * 0.2) {
 			super();
 			this.type = 'ArrowHelper';
 
 			if (_lineGeometry === undefined) {
-				_lineGeometry = new proxy_BufferGeometry_in_ArrowHelper();
+				_lineGeometry = new PROXY.internal({
+					c: BufferGeometry,
+					w: 'ArrowHelper'
+				});
 
 				_lineGeometry.setAttribute('position', new Float32BufferAttribute([0, 0, 0, 0, 1, 0], 3));
 
-				_coneGeometry = new proxy_CylinderGeometry_in_ArrowHelper(0, 0.5, 1, 5, 1);
+				_coneGeometry = new PROXY.internal({
+					c: CylinderGeometry,
+					w: 'ArrowHelper'
+				}, 0, 0.5, 1, 5, 1);
 
 				_coneGeometry.translate(0, -0.5, 0);
 			}
 
 			this.position.copy(origin);
-			this.line = new proxy_Line_in_ArrowHelper(_lineGeometry, new proxy_LineBasicMaterial_in_ArrowHelper({
+			this.line = new PROXY.internal({
+				c: Line,
+				w: 'ArrowHelper'
+			}, _lineGeometry, new PROXY.internal({
+				c: LineBasicMaterial,
+				w: 'ArrowHelper'
+			}, {
 				color: color,
 				toneMapped: false
 			}));
 			this.line.matrixAutoUpdate = false;
 			this.add(this.line);
-			this.cone = new proxy_Mesh_in_ArrowHelper(_coneGeometry, new proxy_MeshBasicMaterial_in_ArrowHelper({
+			this.cone = new PROXY.internal({
+				c: Mesh,
+				w: 'ArrowHelper'
+			}, _coneGeometry, new PROXY.internal({
+				c: MeshBasicMaterial,
+				w: 'ArrowHelper'
+			}, {
 				color: color,
 				toneMapped: false
 			}));
@@ -35418,19 +36242,27 @@
 
 	}
 
-	// #PROXY1.0.0 Classes:AxesHelper Uses:BufferGeometry,LineBasicMaterial
-	const AxesHelper = PROXY.CTOR(orig_AxesHelper, "AxesHelper");
-	const proxy_BufferGeometry_in_AxesHelper = PROXY.Owned(BufferGeometry, "AxesHelper");
-	const proxy_LineBasicMaterial_in_AxesHelper = PROXY.Owned(LineBasicMaterial, "AxesHelper");
+	function wrap_ArrowHelper() {
+		return PROXY.wrap(ArrowHelper, arguments);
+	}
+	PROXY.init(ArrowHelper);
 
-	class orig_AxesHelper extends LineSegments {
+	// #PROXY1.0.0 Classes:AxesHelper Uses:BufferGeometry,LineBasicMaterial
+
+	class AxesHelper extends LineSegments {
 		constructor(size = 1) {
 			const vertices = [0, 0, 0, size, 0, 0, 0, 0, 0, 0, size, 0, 0, 0, 0, 0, 0, size];
 			const colors = [1, 0, 0, 1, 0.6, 0, 0, 1, 0, 0.6, 1, 0, 0, 0, 1, 0, 0.6, 1];
-			const geometry = new proxy_BufferGeometry_in_AxesHelper();
+			const geometry = new PROXY.internal({
+				c: BufferGeometry,
+				w: 'AxesHelper'
+			});
 			geometry.setAttribute('position', new Float32BufferAttribute(vertices, 3));
 			geometry.setAttribute('color', new Float32BufferAttribute(colors, 3));
-			const material = new proxy_LineBasicMaterial_in_AxesHelper({
+			const material = new PROXY.internal({
+				c: LineBasicMaterial,
+				w: 'AxesHelper'
+			}, {
 				vertexColors: true,
 				toneMapped: false
 			});
@@ -35460,6 +36292,11 @@
 		}
 
 	}
+
+	function wrap_AxesHelper() {
+		return PROXY.wrap(AxesHelper, arguments);
+	}
+	PROXY.init(AxesHelper);
 
 	class ShapePath {
 		constructor() {
@@ -35968,21 +36805,23 @@
 
 	}
 
-	if (typeof __THREE_DEVTOOLS__ !== "undefined") {
-		__THREE_DEVTOOLS__.dispatchEvent(new CustomEvent("register", {
+	// #PROXY1.0.0 
+
+	if (typeof __THREE_DEVTOOLS__ !== 'undefined') {
+		__THREE_DEVTOOLS__.dispatchEvent(new CustomEvent('register', {
 			detail: {
 				revision: REVISION
 			}
 		}));
 	}
 
-	if (typeof window !== "undefined") {
+	if (typeof window !== 'undefined') {
 		if (window.__THREE__) {
-			console.warn("WARNING: Multiple instances of Three.js being imported!");
+			console.warn('WARNING: Multiple instances of Three.js being imported!');
 		} else {
 			window.__THREE__ = REVISION;
 		}
-	}
+	} // #PROXY1.0.0	OVERRIDES
 
 	exports.ACESFilmicToneMapping = ACESFilmicToneMapping;
 	exports.AddEquation = AddEquation;
@@ -35992,8 +36831,8 @@
 	exports.AlphaFormat = AlphaFormat;
 	exports.AlwaysDepth = AlwaysDepth;
 	exports.AlwaysStencilFunc = AlwaysStencilFunc;
-	exports.AmbientLight = AmbientLight;
-	exports.AmbientLightProbe = AmbientLightProbe;
+	exports.AmbientLight = wrap_AmbientLight;
+	exports.AmbientLightProbe = wrap_AmbientLightProbe;
 	exports.AnimationClip = AnimationClip;
 	exports.AnimationLoader = AnimationLoader;
 	exports.AnimationMixer = AnimationMixer;
@@ -36001,51 +36840,51 @@
 	exports.AnimationUtils = AnimationUtils;
 	exports.ArcCurve = ArcCurve;
 	exports.ArrayCamera = ArrayCamera;
-	exports.ArrowHelper = ArrowHelper;
+	exports.ArrowHelper = wrap_ArrowHelper;
 	exports.Audio = Audio;
 	exports.AudioAnalyser = AudioAnalyser;
 	exports.AudioContext = AudioContext;
 	exports.AudioListener = AudioListener;
 	exports.AudioLoader = AudioLoader;
-	exports.AxesHelper = AxesHelper;
+	exports.AxesHelper = wrap_AxesHelper;
 	exports.BackSide = BackSide;
 	exports.BasicDepthPacking = BasicDepthPacking;
 	exports.BasicShadowMap = BasicShadowMap;
-	exports.Bone = Bone;
+	exports.Bone = wrap_Bone;
 	exports.BooleanKeyframeTrack = BooleanKeyframeTrack;
 	exports.Box2 = Box2;
 	exports.Box3 = Box3;
-	exports.Box3Helper = Box3Helper;
+	exports.Box3Helper = wrap_Box3Helper;
 	exports.BoxBufferGeometry = BoxBufferGeometry;
-	exports.BoxGeometry = BoxGeometry;
-	exports.BoxHelper = BoxHelper;
+	exports.BoxGeometry = wrap_BoxGeometry;
+	exports.BoxHelper = wrap_BoxHelper;
 	exports.BufferAttribute = BufferAttribute;
-	exports.BufferGeometry = BufferGeometry;
+	exports.BufferGeometry = wrap_BufferGeometry;
 	exports.BufferGeometryLoader = BufferGeometryLoader;
 	exports.ByteType = ByteType;
 	exports.Cache = Cache;
-	exports.Camera = Camera;
-	exports.CameraHelper = CameraHelper;
-	exports.CanvasTexture = CanvasTexture;
+	exports.Camera = wrap_Camera;
+	exports.CameraHelper = wrap_CameraHelper;
+	exports.CanvasTexture = wrap_CanvasTexture;
 	exports.CapsuleBufferGeometry = CapsuleBufferGeometry;
-	exports.CapsuleGeometry = CapsuleGeometry;
+	exports.CapsuleGeometry = wrap_CapsuleGeometry;
 	exports.CatmullRomCurve3 = CatmullRomCurve3;
 	exports.CineonToneMapping = CineonToneMapping;
 	exports.CircleBufferGeometry = CircleBufferGeometry;
-	exports.CircleGeometry = CircleGeometry;
+	exports.CircleGeometry = wrap_CircleGeometry;
 	exports.ClampToEdgeWrapping = ClampToEdgeWrapping;
 	exports.Clock = Clock;
 	exports.Color = Color;
 	exports.ColorKeyframeTrack = ColorKeyframeTrack;
 	exports.ColorManagement = ColorManagement;
-	exports.CompressedTexture = CompressedTexture;
+	exports.CompressedTexture = wrap_CompressedTexture;
 	exports.CompressedTextureLoader = CompressedTextureLoader;
 	exports.ConeBufferGeometry = ConeBufferGeometry;
-	exports.ConeGeometry = ConeGeometry;
-	exports.CubeCamera = CubeCamera;
+	exports.ConeGeometry = wrap_ConeGeometry;
+	exports.CubeCamera = wrap_CubeCamera;
 	exports.CubeReflectionMapping = CubeReflectionMapping;
 	exports.CubeRefractionMapping = CubeRefractionMapping;
-	exports.CubeTexture = CubeTexture;
+	exports.CubeTexture = wrap_CubeTexture;
 	exports.CubeTextureLoader = CubeTextureLoader;
 	exports.CubeUVReflectionMapping = CubeUVReflectionMapping;
 	exports.CubicBezierCurve = CubicBezierCurve;
@@ -36060,11 +36899,11 @@
 	exports.CustomBlending = CustomBlending;
 	exports.CustomToneMapping = CustomToneMapping;
 	exports.CylinderBufferGeometry = CylinderBufferGeometry;
-	exports.CylinderGeometry = CylinderGeometry;
+	exports.CylinderGeometry = wrap_CylinderGeometry;
 	exports.Cylindrical = Cylindrical;
-	exports.Data3DTexture = Data3DTexture;
-	exports.DataArrayTexture = DataArrayTexture;
-	exports.DataTexture = DataTexture;
+	exports.Data3DTexture = wrap_Data3DTexture;
+	exports.DataArrayTexture = wrap_DataArrayTexture;
+	exports.DataTexture = wrap_DataTexture;
 	exports.DataTexture2DArray = DataTexture2DArray;
 	exports.DataTexture3D = DataTexture3D;
 	exports.DataTextureLoader = DataTextureLoader;
@@ -36074,19 +36913,20 @@
 	exports.DefaultLoadingManager = DefaultLoadingManager;
 	exports.DepthFormat = DepthFormat;
 	exports.DepthStencilFormat = DepthStencilFormat;
-	exports.DepthTexture = DepthTexture;
-	exports.DirectionalLight = DirectionalLight;
-	exports.DirectionalLightHelper = DirectionalLightHelper;
+	exports.DepthTexture = wrap_DepthTexture;
+	exports.DirectionalLight = wrap_DirectionalLight;
+	exports.DirectionalLightHelper = wrap_DirectionalLightHelper;
+	exports.DirectionalLightShadow = wrap_DirectionalLightShadow;
 	exports.DiscreteInterpolant = DiscreteInterpolant;
 	exports.DodecahedronBufferGeometry = DodecahedronBufferGeometry;
-	exports.DodecahedronGeometry = DodecahedronGeometry;
+	exports.DodecahedronGeometry = wrap_DodecahedronGeometry;
 	exports.DoubleSide = DoubleSide;
 	exports.DstAlphaFactor = DstAlphaFactor;
 	exports.DstColorFactor = DstColorFactor;
 	exports.DynamicCopyUsage = DynamicCopyUsage;
 	exports.DynamicDrawUsage = DynamicDrawUsage;
 	exports.DynamicReadUsage = DynamicReadUsage;
-	exports.EdgesGeometry = EdgesGeometry;
+	exports.EdgesGeometry = wrap_EdgesGeometry;
 	exports.EllipseCurve = EllipseCurve;
 	exports.EqualDepth = EqualDepth;
 	exports.EqualStencilFunc = EqualStencilFunc;
@@ -36095,7 +36935,7 @@
 	exports.Euler = Euler;
 	exports.EventDispatcher = EventDispatcher;
 	exports.ExtrudeBufferGeometry = ExtrudeBufferGeometry;
-	exports.ExtrudeGeometry = ExtrudeGeometry;
+	exports.ExtrudeGeometry = wrap_ExtrudeGeometry;
 	exports.FileLoader = FileLoader;
 	exports.Float16BufferAttribute = Float16BufferAttribute;
 	exports.Float32BufferAttribute = Float32BufferAttribute;
@@ -36103,7 +36943,7 @@
 	exports.FloatType = FloatType;
 	exports.Fog = Fog;
 	exports.FogExp2 = FogExp2;
-	exports.FramebufferTexture = FramebufferTexture;
+	exports.FramebufferTexture = wrap_FramebufferTexture;
 	exports.FrontSide = FrontSide;
 	exports.Frustum = Frustum;
 	exports.GLBufferAttribute = GLBufferAttribute;
@@ -36113,14 +36953,14 @@
 	exports.GreaterEqualDepth = GreaterEqualDepth;
 	exports.GreaterEqualStencilFunc = GreaterEqualStencilFunc;
 	exports.GreaterStencilFunc = GreaterStencilFunc;
-	exports.GridHelper = GridHelper;
-	exports.Group = Group;
+	exports.GridHelper = wrap_GridHelper;
+	exports.Group = wrap_Group;
 	exports.HalfFloatType = HalfFloatType;
-	exports.HemisphereLight = HemisphereLight;
-	exports.HemisphereLightHelper = HemisphereLightHelper;
-	exports.HemisphereLightProbe = HemisphereLightProbe;
+	exports.HemisphereLight = wrap_HemisphereLight;
+	exports.HemisphereLightHelper = wrap_HemisphereLightHelper;
+	exports.HemisphereLightProbe = wrap_HemisphereLightProbe;
 	exports.IcosahedronBufferGeometry = IcosahedronBufferGeometry;
-	exports.IcosahedronGeometry = IcosahedronGeometry;
+	exports.IcosahedronGeometry = wrap_IcosahedronGeometry;
 	exports.ImageBitmapLoader = ImageBitmapLoader;
 	exports.ImageLoader = ImageLoader;
 	exports.ImageUtils = ImageUtils;
@@ -36128,7 +36968,7 @@
 	exports.IncrementStencilOp = IncrementStencilOp;
 	exports.IncrementWrapStencilOp = IncrementWrapStencilOp;
 	exports.InstancedBufferAttribute = InstancedBufferAttribute;
-	exports.InstancedBufferGeometry = InstancedBufferGeometry;
+	exports.InstancedBufferGeometry = wrap_InstancedBufferGeometry;
 	exports.InstancedInterleavedBuffer = InstancedInterleavedBuffer;
 	exports.InstancedMesh = InstancedMesh;
 	exports.Int16BufferAttribute = Int16BufferAttribute;
@@ -36144,24 +36984,25 @@
 	exports.InvertStencilOp = InvertStencilOp;
 	exports.KeepStencilOp = KeepStencilOp;
 	exports.KeyframeTrack = KeyframeTrack;
-	exports.LOD = LOD;
+	exports.LOD = wrap_LOD;
 	exports.LatheBufferGeometry = LatheBufferGeometry;
-	exports.LatheGeometry = LatheGeometry;
+	exports.LatheGeometry = wrap_LatheGeometry;
 	exports.Layers = Layers;
 	exports.LessDepth = LessDepth;
 	exports.LessEqualDepth = LessEqualDepth;
 	exports.LessEqualStencilFunc = LessEqualStencilFunc;
 	exports.LessStencilFunc = LessStencilFunc;
-	exports.Light = Light;
-	exports.LightProbe = LightProbe;
-	exports.Line = Line;
+	exports.Light = wrap_Light;
+	exports.LightProbe = wrap_LightProbe;
+	exports.LightShadow = wrap_LightShadow;
+	exports.Line = wrap_Line;
 	exports.Line3 = Line3;
-	exports.LineBasicMaterial = LineBasicMaterial;
+	exports.LineBasicMaterial = wrap_LineBasicMaterial;
 	exports.LineCurve = LineCurve;
 	exports.LineCurve3 = LineCurve3;
-	exports.LineDashedMaterial = LineDashedMaterial;
-	exports.LineLoop = LineLoop;
-	exports.LineSegments = LineSegments;
+	exports.LineDashedMaterial = wrap_LineDashedMaterial;
+	exports.LineLoop = wrap_LineLoop;
+	exports.LineSegments = wrap_LineSegments;
 	exports.LinearEncoding = LinearEncoding;
 	exports.LinearFilter = LinearFilter;
 	exports.LinearInterpolant = LinearInterpolant;
@@ -36180,23 +37021,23 @@
 	exports.LuminanceAlphaFormat = LuminanceAlphaFormat;
 	exports.LuminanceFormat = LuminanceFormat;
 	exports.MOUSE = MOUSE;
-	exports.Material = Material;
+	exports.Material = wrap_Material;
 	exports.MaterialLoader = MaterialLoader;
 	exports.MathUtils = MathUtils;
 	exports.Matrix3 = Matrix3;
 	exports.Matrix4 = Matrix4;
 	exports.MaxEquation = MaxEquation;
-	exports.Mesh = Mesh;
-	exports.MeshBasicMaterial = MeshBasicMaterial;
-	exports.MeshDepthMaterial = MeshDepthMaterial;
-	exports.MeshDistanceMaterial = MeshDistanceMaterial;
-	exports.MeshLambertMaterial = MeshLambertMaterial;
-	exports.MeshMatcapMaterial = MeshMatcapMaterial;
-	exports.MeshNormalMaterial = MeshNormalMaterial;
-	exports.MeshPhongMaterial = MeshPhongMaterial;
-	exports.MeshPhysicalMaterial = MeshPhysicalMaterial;
-	exports.MeshStandardMaterial = MeshStandardMaterial;
-	exports.MeshToonMaterial = MeshToonMaterial;
+	exports.Mesh = wrap_Mesh;
+	exports.MeshBasicMaterial = wrap_MeshBasicMaterial;
+	exports.MeshDepthMaterial = wrap_MeshDepthMaterial;
+	exports.MeshDistanceMaterial = wrap_MeshDistanceMaterial;
+	exports.MeshLambertMaterial = wrap_MeshLambertMaterial;
+	exports.MeshMatcapMaterial = wrap_MeshMatcapMaterial;
+	exports.MeshNormalMaterial = wrap_MeshNormalMaterial;
+	exports.MeshPhongMaterial = wrap_MeshPhongMaterial;
+	exports.MeshPhysicalMaterial = wrap_MeshPhysicalMaterial;
+	exports.MeshStandardMaterial = wrap_MeshStandardMaterial;
+	exports.MeshToonMaterial = wrap_MeshToonMaterial;
 	exports.MinEquation = MinEquation;
 	exports.MirroredRepeatWrapping = MirroredRepeatWrapping;
 	exports.MixOperation = MixOperation;
@@ -36217,34 +37058,35 @@
 	exports.NotEqualDepth = NotEqualDepth;
 	exports.NotEqualStencilFunc = NotEqualStencilFunc;
 	exports.NumberKeyframeTrack = NumberKeyframeTrack;
-	exports.Object3D = Object3D;
+	exports.Object3D = wrap_Object3D;
 	exports.ObjectLoader = ObjectLoader;
 	exports.ObjectSpaceNormalMap = ObjectSpaceNormalMap;
 	exports.OctahedronBufferGeometry = OctahedronBufferGeometry;
-	exports.OctahedronGeometry = OctahedronGeometry;
+	exports.OctahedronGeometry = wrap_OctahedronGeometry;
 	exports.OneFactor = OneFactor;
 	exports.OneMinusDstAlphaFactor = OneMinusDstAlphaFactor;
 	exports.OneMinusDstColorFactor = OneMinusDstColorFactor;
 	exports.OneMinusSrcAlphaFactor = OneMinusSrcAlphaFactor;
 	exports.OneMinusSrcColorFactor = OneMinusSrcColorFactor;
-	exports.OrthographicCamera = OrthographicCamera;
+	exports.OrthographicCamera = wrap_OrthographicCamera;
 	exports.PCFShadowMap = PCFShadowMap;
 	exports.PCFSoftShadowMap = PCFSoftShadowMap;
-	exports.PMREMGenerator = PMREMGenerator;
+	exports.PMREMGenerator = wrap_PMREMGenerator;
 	exports.PROXY = PROXY;
 	exports.Path = Path;
-	exports.PerspectiveCamera = PerspectiveCamera;
+	exports.PerspectiveCamera = wrap_PerspectiveCamera;
 	exports.Plane = Plane;
 	exports.PlaneBufferGeometry = PlaneBufferGeometry;
-	exports.PlaneGeometry = PlaneGeometry;
-	exports.PlaneHelper = PlaneHelper;
-	exports.PointLight = PointLight;
-	exports.PointLightHelper = PointLightHelper;
-	exports.Points = Points;
-	exports.PointsMaterial = PointsMaterial;
-	exports.PolarGridHelper = PolarGridHelper;
+	exports.PlaneGeometry = wrap_PlaneGeometry;
+	exports.PlaneHelper = wrap_PlaneHelper;
+	exports.PointLight = wrap_PointLight;
+	exports.PointLightHelper = wrap_PointLightHelper;
+	exports.PointLightShadow = wrap_PointLightShadow;
+	exports.Points = wrap_Points;
+	exports.PointsMaterial = wrap_PointsMaterial;
+	exports.PolarGridHelper = wrap_PolarGridHelper;
 	exports.PolyhedronBufferGeometry = PolyhedronBufferGeometry;
-	exports.PolyhedronGeometry = PolyhedronGeometry;
+	exports.PolyhedronGeometry = wrap_PolyhedronGeometry;
 	exports.PositionalAudio = PositionalAudio;
 	exports.PropertyBinding = PropertyBinding;
 	exports.PropertyMixer = PropertyMixer;
@@ -36286,10 +37128,10 @@
 	exports.RGB_S3TC_DXT1_Format = RGB_S3TC_DXT1_Format;
 	exports.RGFormat = RGFormat;
 	exports.RGIntegerFormat = RGIntegerFormat;
-	exports.RawShaderMaterial = RawShaderMaterial;
+	exports.RawShaderMaterial = wrap_RawShaderMaterial;
 	exports.Ray = Ray;
 	exports.Raycaster = Raycaster;
-	exports.RectAreaLight = RectAreaLight;
+	exports.RectAreaLight = wrap_RectAreaLight;
 	exports.RedFormat = RedFormat;
 	exports.RedIntegerFormat = RedIntegerFormat;
 	exports.ReinhardToneMapping = ReinhardToneMapping;
@@ -36297,33 +37139,34 @@
 	exports.ReplaceStencilOp = ReplaceStencilOp;
 	exports.ReverseSubtractEquation = ReverseSubtractEquation;
 	exports.RingBufferGeometry = RingBufferGeometry;
-	exports.RingGeometry = RingGeometry;
+	exports.RingGeometry = wrap_RingGeometry;
 	exports.SRGBColorSpace = SRGBColorSpace;
-	exports.Scene = Scene;
+	exports.Scene = wrap_Scene;
 	exports.ShaderChunk = ShaderChunk;
 	exports.ShaderLib = ShaderLib;
-	exports.ShaderMaterial = ShaderMaterial;
-	exports.ShadowMaterial = ShadowMaterial;
+	exports.ShaderMaterial = wrap_ShaderMaterial;
+	exports.ShadowMaterial = wrap_ShadowMaterial;
 	exports.Shape = Shape;
 	exports.ShapeBufferGeometry = ShapeBufferGeometry;
-	exports.ShapeGeometry = ShapeGeometry;
+	exports.ShapeGeometry = wrap_ShapeGeometry;
 	exports.ShapePath = ShapePath;
 	exports.ShapeUtils = ShapeUtils;
 	exports.ShortType = ShortType;
-	exports.Skeleton = Skeleton;
-	exports.SkeletonHelper = SkeletonHelper;
-	exports.SkinnedMesh = SkinnedMesh;
+	exports.Skeleton = wrap_Skeleton;
+	exports.SkeletonHelper = wrap_SkeletonHelper;
+	exports.SkinnedMesh = wrap_SkinnedMesh;
 	exports.Source = Source;
 	exports.Sphere = Sphere;
 	exports.SphereBufferGeometry = SphereBufferGeometry;
-	exports.SphereGeometry = SphereGeometry;
+	exports.SphereGeometry = wrap_SphereGeometry;
 	exports.Spherical = Spherical;
 	exports.SphericalHarmonics3 = SphericalHarmonics3;
 	exports.SplineCurve = SplineCurve;
-	exports.SpotLight = SpotLight;
-	exports.SpotLightHelper = SpotLightHelper;
-	exports.Sprite = Sprite;
-	exports.SpriteMaterial = SpriteMaterial;
+	exports.SpotLight = wrap_SpotLight;
+	exports.SpotLightHelper = wrap_SpotLightHelper;
+	exports.SpotLightShadow = wrap_SpotLightShadow;
+	exports.Sprite = wrap_Sprite;
+	exports.SpriteMaterial = wrap_SpriteMaterial;
 	exports.SrcAlphaFactor = SrcAlphaFactor;
 	exports.SrcAlphaSaturateFactor = SrcAlphaSaturateFactor;
 	exports.SrcColorFactor = SrcColorFactor;
@@ -36340,19 +37183,19 @@
 	exports.TOUCH = TOUCH;
 	exports.TangentSpaceNormalMap = TangentSpaceNormalMap;
 	exports.TetrahedronBufferGeometry = TetrahedronBufferGeometry;
-	exports.TetrahedronGeometry = TetrahedronGeometry;
-	exports.Texture = Texture;
+	exports.TetrahedronGeometry = wrap_TetrahedronGeometry;
+	exports.Texture = wrap_Texture;
 	exports.TextureLoader = TextureLoader;
 	exports.TorusBufferGeometry = TorusBufferGeometry;
-	exports.TorusGeometry = TorusGeometry;
+	exports.TorusGeometry = wrap_TorusGeometry;
 	exports.TorusKnotBufferGeometry = TorusKnotBufferGeometry;
-	exports.TorusKnotGeometry = TorusKnotGeometry;
+	exports.TorusKnotGeometry = wrap_TorusKnotGeometry;
 	exports.Triangle = Triangle;
 	exports.TriangleFanDrawMode = TriangleFanDrawMode;
 	exports.TriangleStripDrawMode = TriangleStripDrawMode;
 	exports.TrianglesDrawMode = TrianglesDrawMode;
 	exports.TubeBufferGeometry = TubeBufferGeometry;
-	exports.TubeGeometry = TubeGeometry;
+	exports.TubeGeometry = wrap_TubeGeometry;
 	exports.UVMapping = UVMapping;
 	exports.Uint16BufferAttribute = Uint16BufferAttribute;
 	exports.Uint32BufferAttribute = Uint32BufferAttribute;
@@ -36373,17 +37216,17 @@
 	exports.Vector3 = Vector3;
 	exports.Vector4 = Vector4;
 	exports.VectorKeyframeTrack = VectorKeyframeTrack;
-	exports.VideoTexture = VideoTexture;
-	exports.WebGL1Renderer = WebGL1Renderer;
-	exports.WebGL3DRenderTarget = WebGL3DRenderTarget;
-	exports.WebGLArrayRenderTarget = WebGLArrayRenderTarget;
-	exports.WebGLCubeRenderTarget = WebGLCubeRenderTarget;
-	exports.WebGLMultipleRenderTargets = WebGLMultipleRenderTargets;
+	exports.VideoTexture = wrap_VideoTexture;
+	exports.WebGL1Renderer = wrap_WebGL1Renderer;
+	exports.WebGL3DRenderTarget = wrap_WebGL3DRenderTarget;
+	exports.WebGLArrayRenderTarget = wrap_WebGLArrayRenderTarget;
+	exports.WebGLCubeRenderTarget = wrap_WebGLCubeRenderTarget;
+	exports.WebGLMultipleRenderTargets = wrap_WebGLMultipleRenderTargets;
 	exports.WebGLMultisampleRenderTarget = WebGLMultisampleRenderTarget;
-	exports.WebGLRenderTarget = WebGLRenderTarget;
+	exports.WebGLRenderTarget = wrap_WebGLRenderTarget;
 	exports.WebGLRenderer = WebGLRenderer;
 	exports.WebGLUtils = WebGLUtils;
-	exports.WireframeGeometry = WireframeGeometry;
+	exports.WireframeGeometry = wrap_WireframeGeometry;
 	exports.WrapAroundEnding = WrapAroundEnding;
 	exports.ZeroCurvatureEnding = ZeroCurvatureEnding;
 	exports.ZeroFactor = ZeroFactor;
@@ -36391,6 +37234,27 @@
 	exports.ZeroStencilOp = ZeroStencilOp;
 	exports._SRGBAFormat = _SRGBAFormat;
 	exports.sRGBEncoding = sRGBEncoding;
+	exports.wrap_BoxGeometry = wrap_BoxGeometry;
+	exports.wrap_CapsuleGeometry = wrap_CapsuleGeometry;
+	exports.wrap_CircleGeometry = wrap_CircleGeometry;
+	exports.wrap_ConeGeometry = wrap_ConeGeometry;
+	exports.wrap_CylinderGeometry = wrap_CylinderGeometry;
+	exports.wrap_DodecahedronGeometry = wrap_DodecahedronGeometry;
+	exports.wrap_EdgesGeometry = wrap_EdgesGeometry;
+	exports.wrap_ExtrudeGeometry = wrap_ExtrudeGeometry;
+	exports.wrap_IcosahedronGeometry = wrap_IcosahedronGeometry;
+	exports.wrap_LatheGeometry = wrap_LatheGeometry;
+	exports.wrap_OctahedronGeometry = wrap_OctahedronGeometry;
+	exports.wrap_PlaneGeometry = wrap_PlaneGeometry;
+	exports.wrap_PolyhedronGeometry = wrap_PolyhedronGeometry;
+	exports.wrap_RingGeometry = wrap_RingGeometry;
+	exports.wrap_ShapeGeometry = wrap_ShapeGeometry;
+	exports.wrap_SphereGeometry = wrap_SphereGeometry;
+	exports.wrap_TetrahedronGeometry = wrap_TetrahedronGeometry;
+	exports.wrap_TorusGeometry = wrap_TorusGeometry;
+	exports.wrap_TorusKnotGeometry = wrap_TorusKnotGeometry;
+	exports.wrap_TubeGeometry = wrap_TubeGeometry;
+	exports.wrap_WireframeGeometry = wrap_WireframeGeometry;
 
 	Object.defineProperty(exports, '__esModule', { value: true });
 
