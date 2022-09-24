@@ -151,6 +151,14 @@ const fileRules = {
 //     code:''
 //   };
 // }
+function getAllAttrs(def){
+  const a = [];
+  while(def?.attrs){
+    a.push(...def.attrs);
+    def = BuildDef[def.extends];
+  }
+  return a;
+}
 
 // note; files seem to encode } with 7E or 7D
 const ExportRegex = /[\W\s]?export\s*\{\s*(\w+)\s*[\x7D\x7E]/g;
@@ -297,7 +305,8 @@ walk(SrcPath, function (err, results) {
         console.warn("No mode for "+def.name);
       }
 
-      extra += `PROXY.init(${def.name});` + EOL;
+      const attrs = getAllAttrs(def);
+      extra += `PROXY.init(${def.name},`+ JSON.stringify(attrs) +`);` + EOL;
 
       if(def.export){
         // do the export replace

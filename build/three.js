@@ -9,6 +9,77 @@
 	(global = typeof globalThis !== 'undefined' ? globalThis : global || self, factory(global.THREE = {}));
 })(this, (function (exports) { 'use strict';
 
+	///////////////////////////////////////////////////////////////////////
+	// MEMORY MANAGEMENT
+	let mmc = 0;
+	const mmSet = new Set();
+
+	function mmNew(inst) {
+		inst.__mmc = mmc;
+		mmSet.add(inst);
+	}
+
+	function mmScan() {
+		mmc++;
+
+		for (const o of mmSet) {
+			// look for token (without creating)
+			if (o.__token?.deref()) {
+				// held object
+				mmMark(o);
+			}
+		} // no check which things were not marked
+
+
+		let marked = 0,
+				unmarked = 0;
+
+		for (const o of mmSet) {
+			if (o.__mmc === mmc) marked++;else unmarked++;
+		}
+
+		return {
+			marked,
+			unmarked
+		};
+	}
+
+	function mmMark(o) {
+		o.__mmc = mmc;
+		o.__attrs?.forEach(a => mmMarkA(o, a));
+	}
+
+	function mmMarkA(o, a) {
+		if (a in o) mmMarkQ(o[a]);
+	}
+
+	function mmMarkQ(o) {
+		if (typeof o === 'object') {
+			// arrays must be iterated
+			if (Array.isArray(o)) {
+				o.forEach(e => mmMarkQ(e));
+			} else if (o && '__mmc' in o) {
+				// needs to have an mmc (or def)
+				mmMark(o);
+			}
+		}
+	}
+
+	function mmReset() {
+		// dispose of all
+		for (const o of mmSet) o.dispose?.();
+
+		mmSet.clear();
+	}
+
+	exports.reset = mmReset;
+	exports.scan = mmScan; //////////////
+	// TOKENS
+
+	const fr = new FinalizationRegistry(res => {
+		console.log("finalise on", res.constructor.name); //res?.dispose?.(true);
+	});
+
 	class Token {
 		get ref() {
 			return this.__ref;
@@ -21,6 +92,7 @@
 		constructor(inst) {
 			inst.__token = new WeakRef(this);
 			this.__ref = inst;
+			fr.register(this, inst);
 		}
 
 		static create(inst) {
@@ -28,10 +100,19 @@
 			return new Token(inst);
 		}
 
-	}
+	} //////////////////
+	// PROXY & INIT
 
-	function initClass(cls) {
+
+	function initClass(cls, attrs) {
 		const pt = cls.prototype; // three js classes need to have properties added for token & ref
+
+		if (Array.isArray(attrs)) {
+			// add def to prototype
+			Object.defineProperty(pt, "__attrs", {
+				value: attrs
+			});
+		}
 
 		Object.defineProperty(pt, "token", {
 			get: function () {
@@ -65,7 +146,6 @@
 
 			const scope = PROXY.stack[0];
 			let inst = cb(); // after the instantiate..
-			//const mi = mmAdd(inst,usr);
 
 			if (usr) {
 				//
@@ -79,6 +159,7 @@
 				scope.push(inst);
 			}
 
+			mmNew(inst);
 			return inst;
 		},
 		disposeFn: function () {
@@ -100,8 +181,8 @@
 				return new info.c(...args);
 			}, false);
 		},
-		init: function (cls) {
-			initClass(cls);
+		init: function (cls, attrs) {
+			initClass(cls, attrs);
 		}
 	};
 
@@ -2188,7 +2269,7 @@
 	function wrap_Texture() {
 		return PROXY.wrap(Texture, arguments);
 	}
-	PROXY.init(Texture);
+	PROXY.init(Texture, []);
 
 	class Vector4 {
 		constructor(x = 0, y = 0, z = 0, w = 1) {
@@ -2753,7 +2834,7 @@
 	function wrap_WebGLRenderTarget() {
 		return PROXY.wrap(WebGLRenderTarget, arguments);
 	}
-	PROXY.init(WebGLRenderTarget);
+	PROXY.init(WebGLRenderTarget, ["texture"]);
 
 	// #PROXY1.0.0 Classes:DataArrayTexture Uses:
 
@@ -2780,7 +2861,7 @@
 	function wrap_DataArrayTexture() {
 		return PROXY.wrap(DataArrayTexture, arguments);
 	}
-	PROXY.init(DataArrayTexture);
+	PROXY.init(DataArrayTexture, []);
 
 	// #PROXY1.0.0 Classes:WebGLArrayRenderTarget Uses:DataArrayTexture
 
@@ -2801,7 +2882,7 @@
 	function wrap_WebGLArrayRenderTarget() {
 		return PROXY.wrap(WebGLArrayRenderTarget, arguments);
 	}
-	PROXY.init(WebGLArrayRenderTarget);
+	PROXY.init(WebGLArrayRenderTarget, ["texture"]);
 
 	// #PROXY1.0.0 Classes:Data3DTexture Uses:
 
@@ -2835,7 +2916,7 @@
 	function wrap_Data3DTexture() {
 		return PROXY.wrap(Data3DTexture, arguments);
 	}
-	PROXY.init(Data3DTexture);
+	PROXY.init(Data3DTexture, []);
 
 	// #PROXY1.0.0 Classes:WebGL3DRenderTarget Uses:Data3DTexture
 
@@ -2856,7 +2937,7 @@
 	function wrap_WebGL3DRenderTarget() {
 		return PROXY.wrap(WebGL3DRenderTarget, arguments);
 	}
-	PROXY.init(WebGL3DRenderTarget);
+	PROXY.init(WebGL3DRenderTarget, ["texture"]);
 
 	// #PROXY1.0.0 Classes:WebGLMultipleRenderTargets Uses:
 
@@ -2918,7 +2999,7 @@
 	function wrap_WebGLMultipleRenderTargets() {
 		return PROXY.wrap(WebGLMultipleRenderTargets, arguments);
 	}
-	PROXY.init(WebGLMultipleRenderTargets);
+	PROXY.init(WebGLMultipleRenderTargets, []);
 
 	class Quaternion {
 		constructor(x = 0, y = 0, z = 0, w = 1) {
@@ -6552,7 +6633,7 @@
 	function wrap_Object3D() {
 		return PROXY.wrap(Object3D, arguments);
 	}
-	PROXY.init(Object3D);
+	PROXY.init(Object3D, ["children"]);
 
 	const _v0$1 = /*@__PURE__*/new Vector3();
 
@@ -7174,7 +7255,7 @@
 	function wrap_Material() {
 		return PROXY.wrap(Material, arguments);
 	}
-	PROXY.init(Material);
+	PROXY.init(Material, []);
 
 	// #PROXY1.0.0 Classes:MeshBasicMaterial Uses:
 
@@ -7231,7 +7312,7 @@
 	function wrap_MeshBasicMaterial() {
 		return PROXY.wrap(MeshBasicMaterial, arguments);
 	}
-	PROXY.init(MeshBasicMaterial);
+	PROXY.init(MeshBasicMaterial, ["map", "lightMap", "aoMap", "specularMap", "alphaMap", "envMap"]);
 
 	const _vector$9 = /*@__PURE__*/new Vector3();
 
@@ -8339,7 +8420,7 @@
 	function wrap_BufferGeometry() {
 		return PROXY.wrap(BufferGeometry, arguments);
 	}
-	PROXY.init(BufferGeometry);
+	PROXY.init(BufferGeometry, []);
 
 	// #PROXY1.0.0 Classes:Mesh Uses:BufferGeometry,MeshBasicMaterial
 
@@ -8667,7 +8748,7 @@
 	function wrap_Mesh() {
 		return PROXY.wrap(Mesh, arguments);
 	}
-	PROXY.init(Mesh);
+	PROXY.init(Mesh, ["geometry", "material", "children"]);
 
 	// #PROXY1.0.0 Classes:BoxGeometry Uses:BoxGeometry
 
@@ -8791,7 +8872,7 @@
 	function wrap_BoxGeometry() {
 		return PROXY.wrap(BoxGeometry, arguments);
 	}
-	PROXY.init(BoxGeometry);
+	PROXY.init(BoxGeometry, []);
 
 	/**
 	 * Uniform Utilities
@@ -8982,7 +9063,7 @@
 	function wrap_ShaderMaterial() {
 		return PROXY.wrap(ShaderMaterial, arguments);
 	}
-	PROXY.init(ShaderMaterial);
+	PROXY.init(ShaderMaterial, []);
 
 	// #PROXY1.0.0 Classes:Camera Uses:
 
@@ -9029,7 +9110,7 @@
 	function wrap_Camera() {
 		return PROXY.wrap(Camera, arguments);
 	}
-	PROXY.init(Camera);
+	PROXY.init(Camera, ["children"]);
 
 	// #PROXY1.0.0 Classes:PerspectiveCamera Uses:
 
@@ -9216,7 +9297,7 @@
 	function wrap_PerspectiveCamera() {
 		return PROXY.wrap(PerspectiveCamera, arguments);
 	}
-	PROXY.init(PerspectiveCamera);
+	PROXY.init(PerspectiveCamera, ["children"]);
 
 	// #PROXY1.0.0 Classes:CubeCamera Uses:PerspectiveCamera
 	const fov = 90,
@@ -9312,7 +9393,7 @@
 	function wrap_CubeCamera() {
 		return PROXY.wrap(CubeCamera, arguments);
 	}
-	PROXY.init(CubeCamera);
+	PROXY.init(CubeCamera, ["renderTarget", "children"]);
 
 	// #PROXY1.0.0 Classes:CubeTexture Uses:
 
@@ -9338,7 +9419,7 @@
 	function wrap_CubeTexture() {
 		return PROXY.wrap(CubeTexture, arguments);
 	}
-	PROXY.init(CubeTexture);
+	PROXY.init(CubeTexture, []);
 
 	// #PROXY1.0.0 Classes:WebGLCubeRenderTarget Uses:CubeTexture,BoxGeometry,ShaderMaterial,Mesh,CubeCamera
 
@@ -9471,7 +9552,7 @@
 	function wrap_WebGLCubeRenderTarget() {
 		return PROXY.wrap(WebGLCubeRenderTarget, arguments);
 	}
-	PROXY.init(WebGLCubeRenderTarget);
+	PROXY.init(WebGLCubeRenderTarget, ["texture"]);
 
 	const _vector1 = /*@__PURE__*/new Vector3();
 
@@ -9956,7 +10037,7 @@
 	function wrap_PlaneGeometry() {
 		return PROXY.wrap(PlaneGeometry, arguments);
 	}
-	PROXY.init(PlaneGeometry);
+	PROXY.init(PlaneGeometry, []);
 
 	var alphamap_fragment = "#ifdef USE_ALPHAMAP\n\tdiffuseColor.a *= texture2D( alphaMap, vUv ).g;\n#endif";
 
@@ -11864,7 +11945,7 @@
 	function wrap_OrthographicCamera() {
 		return PROXY.wrap(OrthographicCamera, arguments);
 	}
-	PROXY.init(OrthographicCamera);
+	PROXY.init(OrthographicCamera, ["children"]);
 
 	// #PROXY1.0.0 Classes:PMREMGenerator Uses:OrthographicCamera,Mesh,PerspectiveCamera,MeshBasicMaterial,BoxGeometry,BufferGeometry,WebGLRenderTarget,ShaderMaterial
 	const LOD_MIN = 4; // The standard deviations (radians) associated with the extra mips. These are
@@ -12641,7 +12722,7 @@
 	function wrap_PMREMGenerator() {
 		return PROXY.wrap(PMREMGenerator, arguments);
 	}
-	PROXY.init(PMREMGenerator);
+	PROXY.init(PMREMGenerator, ["_renderer", "_pingPongRenderTarget", "_lodPlanes", "_blurMaterial", "_cubemapMaterial", "_equirectMaterial"]);
 
 	function WebGLCubeUVMaps(renderer) {
 		let cubeUVmaps = new WeakMap();
@@ -15676,7 +15757,7 @@
 	function wrap_MeshDepthMaterial() {
 		return PROXY.wrap(MeshDepthMaterial, arguments);
 	}
-	PROXY.init(MeshDepthMaterial);
+	PROXY.init(MeshDepthMaterial, ["map", "alphaMap", "displacementMap"]);
 
 	// #PROXY1.0.0 Classes:MeshDistanceMaterial Uses:
 
@@ -15714,7 +15795,7 @@
 	function wrap_MeshDistanceMaterial() {
 		return PROXY.wrap(MeshDistanceMaterial, arguments);
 	}
-	PROXY.init(MeshDistanceMaterial);
+	PROXY.init(MeshDistanceMaterial, ["map", "alphaMap", "displacementMap"]);
 
 	const vertex = "void main() {\n\tgl_Position = vec4( position, 1.0 );\n}";
 	const fragment = "uniform sampler2D shadow_pass;\nuniform vec2 resolution;\nuniform float radius;\n#include <packing>\nvoid main() {\n\tconst float samples = float( VSM_SAMPLES );\n\tfloat mean = 0.0;\n\tfloat squared_mean = 0.0;\n\tfloat uvStride = samples <= 1.0 ? 0.0 : 2.0 / ( samples - 1.0 );\n\tfloat uvStart = samples <= 1.0 ? 0.0 : - 1.0;\n\tfor ( float i = 0.0; i < samples; i ++ ) {\n\t\tfloat uvOffset = uvStart + i * uvStride;\n\t\t#ifdef HORIZONTAL_PASS\n\t\t\tvec2 distribution = unpackRGBATo2Half( texture2D( shadow_pass, ( gl_FragCoord.xy + vec2( uvOffset, 0.0 ) * radius ) / resolution ) );\n\t\t\tmean += distribution.x;\n\t\t\tsquared_mean += distribution.y * distribution.y + distribution.x * distribution.x;\n\t\t#else\n\t\t\tfloat depth = unpackRGBAToDepth( texture2D( shadow_pass, ( gl_FragCoord.xy + vec2( 0.0, uvOffset ) * radius ) / resolution ) );\n\t\t\tmean += depth;\n\t\t\tsquared_mean += depth * depth;\n\t\t#endif\n\t}\n\tmean = mean / samples;\n\tsquared_mean = squared_mean / samples;\n\tfloat std_dev = sqrt( squared_mean - mean * mean );\n\tgl_FragColor = pack2HalfToRGBA( vec2( mean, std_dev ) );\n}";
@@ -18319,7 +18400,7 @@
 	function wrap_ArrayCamera() {
 		return PROXY.wrap(ArrayCamera, arguments);
 	}
-	PROXY.init(ArrayCamera);
+	PROXY.init(ArrayCamera, ["cameras", "children"]);
 
 	// #PROXY1.0.0 Classes:Group Uses:
 
@@ -18335,7 +18416,7 @@
 	function wrap_Group() {
 		return PROXY.wrap(Group, arguments);
 	}
-	PROXY.init(Group);
+	PROXY.init(Group, ["children"]);
 
 	const _moveEvent = {
 		type: 'move'
@@ -18588,7 +18669,7 @@
 	function wrap_DepthTexture() {
 		return PROXY.wrap(DepthTexture, arguments);
 	}
-	PROXY.init(DepthTexture);
+	PROXY.init(DepthTexture, []);
 
 	// #PROXY1.0.0 Classes:WebXRManager Uses:PerspectiveCamera,ArrayCamera,WebGLRenderTarget,DepthTexture
 
@@ -19127,7 +19208,7 @@
 	function wrap_WebXRManager() {
 		return PROXY.wrap(WebXRManager, arguments);
 	}
-	PROXY.init(WebXRManager);
+	PROXY.init(WebXRManager, []);
 
 	function WebGLMaterials(renderer, properties) {
 		function refreshFogUniforms(uniforms, fog) {
@@ -21376,7 +21457,7 @@
 	function wrap_WebGLRenderer() {
 		return PROXY.wrap(WebGLRenderer, arguments);
 	}
-	PROXY.init(WebGLRenderer);
+	PROXY.init(WebGLRenderer, []);
 
 	// #PROXY1.0.0 Classes:WebGL1Renderer Uses:
 
@@ -21386,7 +21467,7 @@
 	function wrap_WebGL1Renderer() {
 		return PROXY.wrap(WebGL1Renderer, arguments);
 	}
-	PROXY.init(WebGL1Renderer);
+	PROXY.init(WebGL1Renderer, []);
 
 	class FogExp2 {
 		constructor(color, density = 0.00025) {
@@ -21485,7 +21566,7 @@
 	function wrap_Scene() {
 		return PROXY.wrap(Scene, arguments);
 	}
-	PROXY.init(Scene);
+	PROXY.init(Scene, ["background", "environment", "overrideMaterial", "children"]);
 
 	class InterleavedBuffer {
 		constructor(array, stride) {
@@ -21841,7 +21922,7 @@
 	function wrap_SpriteMaterial() {
 		return PROXY.wrap(SpriteMaterial, arguments);
 	}
-	PROXY.init(SpriteMaterial);
+	PROXY.init(SpriteMaterial, ["map", "alphaMap"]);
 
 	// #PROXY1.0.0 Classes:Sprite Uses:BufferGeometry,SpriteMaterial
 
@@ -21994,7 +22075,7 @@
 	function wrap_Sprite() {
 		return PROXY.wrap(Sprite, arguments);
 	}
-	PROXY.init(Sprite);
+	PROXY.init(Sprite, ["geometry", "material", "children"]);
 
 	// #PROXY1.0.0 Classes:LOD Uses:
 
@@ -22135,7 +22216,7 @@
 	function wrap_LOD() {
 		return PROXY.wrap(LOD, arguments);
 	}
-	PROXY.init(LOD);
+	PROXY.init(LOD, ["levels", "children"]);
 
 	// #PROXY1.0.0 Classes:SkinnedMesh Uses:
 
@@ -22247,7 +22328,7 @@
 	function wrap_SkinnedMesh() {
 		return PROXY.wrap(SkinnedMesh, arguments);
 	}
-	PROXY.init(SkinnedMesh);
+	PROXY.init(SkinnedMesh, ["geometry", "material", "children"]);
 
 	// #PROXY1.0.0 Classes:Bone Uses:
 
@@ -22263,7 +22344,7 @@
 	function wrap_Bone() {
 		return PROXY.wrap(Bone, arguments);
 	}
-	PROXY.init(Bone);
+	PROXY.init(Bone, ["children"]);
 
 	// #PROXY1.0.0 Classes:DataTexture Uses:
 
@@ -22286,7 +22367,7 @@
 	function wrap_DataTexture() {
 		return PROXY.wrap(DataTexture, arguments);
 	}
-	PROXY.init(DataTexture);
+	PROXY.init(DataTexture, []);
 
 	// #PROXY1.0.0 Classes:Skeleton Uses:Skeleton,DataTexture,Bone
 
@@ -22491,7 +22572,7 @@
 	function wrap_Skeleton() {
 		return PROXY.wrap(Skeleton, arguments);
 	}
-	PROXY.init(Skeleton);
+	PROXY.init(Skeleton, ["boneTexture"]);
 
 	class InstancedBufferAttribute extends BufferAttribute {
 		constructor(array, itemSize, normalized, meshPerAttribute = 1) {
@@ -22609,7 +22690,7 @@
 	function wrap_InstancedMesh() {
 		return PROXY.wrap(InstancedMesh, arguments);
 	}
-	PROXY.init(InstancedMesh);
+	PROXY.init(InstancedMesh, ["geometry", "material", "children"]);
 
 	// #PROXY1.0.0 Classes:LineBasicMaterial Uses:
 
@@ -22641,7 +22722,7 @@
 	function wrap_LineBasicMaterial() {
 		return PROXY.wrap(LineBasicMaterial, arguments);
 	}
-	PROXY.init(LineBasicMaterial);
+	PROXY.init(LineBasicMaterial, []);
 
 	// #PROXY1.0.0 Classes:Line Uses:BufferGeometry,LineBasicMaterial
 
@@ -22815,7 +22896,7 @@
 	function wrap_Line() {
 		return PROXY.wrap(Line, arguments);
 	}
-	PROXY.init(Line);
+	PROXY.init(Line, ["geometry", "material", "children"]);
 
 	// #PROXY1.0.0 Classes:LineSegments Uses:
 
@@ -22859,7 +22940,7 @@
 	function wrap_LineSegments() {
 		return PROXY.wrap(LineSegments, arguments);
 	}
-	PROXY.init(LineSegments);
+	PROXY.init(LineSegments, ["geometry", "material", "children"]);
 
 	// #PROXY1.0.0 Classes:LineLoop Uses:
 
@@ -22875,7 +22956,7 @@
 	function wrap_LineLoop() {
 		return PROXY.wrap(LineLoop, arguments);
 	}
-	PROXY.init(LineLoop);
+	PROXY.init(LineLoop, ["geometry", "material", "children"]);
 
 	// #PROXY1.0.0 Classes:PointsMaterial Uses:
 
@@ -22909,7 +22990,7 @@
 	function wrap_PointsMaterial() {
 		return PROXY.wrap(PointsMaterial, arguments);
 	}
-	PROXY.init(PointsMaterial);
+	PROXY.init(PointsMaterial, ["map", "alphaMap"]);
 
 	// #PROXY1.0.0 Classes:Points Uses:BufferGeometry,PointsMaterial
 
@@ -23040,7 +23121,7 @@
 	function wrap_Points() {
 		return PROXY.wrap(Points, arguments);
 	}
-	PROXY.init(Points);
+	PROXY.init(Points, ["geometry", "material", "children"]);
 
 	// #PROXY1.0.0 Classes:VideoTexture Uses:
 
@@ -23081,7 +23162,7 @@
 	function wrap_VideoTexture() {
 		return PROXY.wrap(VideoTexture, arguments);
 	}
-	PROXY.init(VideoTexture);
+	PROXY.init(VideoTexture, []);
 
 	// #PROXY1.0.0 Classes:FramebufferTexture Uses:
 
@@ -23104,7 +23185,7 @@
 	function wrap_FramebufferTexture() {
 		return PROXY.wrap(FramebufferTexture, arguments);
 	}
-	PROXY.init(FramebufferTexture);
+	PROXY.init(FramebufferTexture, []);
 
 	// #PROXY1.0.0 Classes:CompressedTexture Uses:
 
@@ -23130,7 +23211,7 @@
 	function wrap_CompressedTexture() {
 		return PROXY.wrap(CompressedTexture, arguments);
 	}
-	PROXY.init(CompressedTexture);
+	PROXY.init(CompressedTexture, []);
 
 	// #PROXY1.0.0 Classes:CanvasTexture Uses:
 
@@ -23146,7 +23227,7 @@
 	function wrap_CanvasTexture() {
 		return PROXY.wrap(CanvasTexture, arguments);
 	}
-	PROXY.init(CanvasTexture);
+	PROXY.init(CanvasTexture, []);
 
 	/**
 	 * Extensible curve object.
@@ -24561,7 +24642,7 @@
 	function wrap_LatheGeometry() {
 		return PROXY.wrap(LatheGeometry, arguments);
 	}
-	PROXY.init(LatheGeometry);
+	PROXY.init(LatheGeometry, []);
 
 	// #PROXY1.0.0 Classes:CapsuleGeometry Uses:CapsuleGeometry
 
@@ -24592,7 +24673,7 @@
 	function wrap_CapsuleGeometry() {
 		return PROXY.wrap(CapsuleGeometry, arguments);
 	}
-	PROXY.init(CapsuleGeometry);
+	PROXY.init(CapsuleGeometry, []);
 
 	// #PROXY1.0.0 Classes:CircleGeometry Uses:CircleGeometry
 
@@ -24658,7 +24739,7 @@
 	function wrap_CircleGeometry() {
 		return PROXY.wrap(CircleGeometry, arguments);
 	}
-	PROXY.init(CircleGeometry);
+	PROXY.init(CircleGeometry, []);
 
 	// #PROXY1.0.0 Classes:CylinderGeometry Uses:CylinderGeometry
 
@@ -24841,7 +24922,7 @@
 	function wrap_CylinderGeometry() {
 		return PROXY.wrap(CylinderGeometry, arguments);
 	}
-	PROXY.init(CylinderGeometry);
+	PROXY.init(CylinderGeometry, []);
 
 	// #PROXY1.0.0 Classes:ConeGeometry Uses:ConeGeometry
 
@@ -24872,7 +24953,7 @@
 	function wrap_ConeGeometry() {
 		return PROXY.wrap(ConeGeometry, arguments);
 	}
-	PROXY.init(ConeGeometry);
+	PROXY.init(ConeGeometry, []);
 
 	// #PROXY1.0.0 Classes:PolyhedronGeometry Uses:PolyhedronGeometry
 
@@ -25076,7 +25157,7 @@
 	function wrap_PolyhedronGeometry() {
 		return PROXY.wrap(PolyhedronGeometry, arguments);
 	}
-	PROXY.init(PolyhedronGeometry);
+	PROXY.init(PolyhedronGeometry, []);
 
 	// #PROXY1.0.0 Classes:DodecahedronGeometry Uses:DodecahedronGeometry
 
@@ -25110,7 +25191,7 @@
 	function wrap_DodecahedronGeometry() {
 		return PROXY.wrap(DodecahedronGeometry, arguments);
 	}
-	PROXY.init(DodecahedronGeometry);
+	PROXY.init(DodecahedronGeometry, []);
 
 	// #PROXY1.0.0 Classes:EdgesGeometry Uses:
 
@@ -25232,7 +25313,7 @@
 	function wrap_EdgesGeometry() {
 		return PROXY.wrap(EdgesGeometry, arguments);
 	}
-	PROXY.init(EdgesGeometry);
+	PROXY.init(EdgesGeometry, []);
 
 	class Shape extends Path {
 		constructor(points) {
@@ -26454,7 +26535,7 @@
 	function wrap_ExtrudeGeometry() {
 		return PROXY.wrap(ExtrudeGeometry, arguments);
 	}
-	PROXY.init(ExtrudeGeometry);
+	PROXY.init(ExtrudeGeometry, []);
 
 	// #PROXY1.0.0 Classes:IcosahedronGeometry Uses:IcosahedronGeometry
 
@@ -26483,7 +26564,7 @@
 	function wrap_IcosahedronGeometry() {
 		return PROXY.wrap(IcosahedronGeometry, arguments);
 	}
-	PROXY.init(IcosahedronGeometry);
+	PROXY.init(IcosahedronGeometry, []);
 
 	// #PROXY1.0.0 Classes:OctahedronGeometry Uses:OctahedronGeometry
 
@@ -26511,7 +26592,7 @@
 	function wrap_OctahedronGeometry() {
 		return PROXY.wrap(OctahedronGeometry, arguments);
 	}
-	PROXY.init(OctahedronGeometry);
+	PROXY.init(OctahedronGeometry, []);
 
 	// #PROXY1.0.0 Classes:RingGeometry Uses:RingGeometry
 
@@ -26595,7 +26676,7 @@
 	function wrap_RingGeometry() {
 		return PROXY.wrap(RingGeometry, arguments);
 	}
-	PROXY.init(RingGeometry);
+	PROXY.init(RingGeometry, []);
 
 	// #PROXY1.0.0 Classes:ShapeGeometry Uses:ShapeGeometry
 
@@ -26719,7 +26800,7 @@
 	function wrap_ShapeGeometry() {
 		return PROXY.wrap(ShapeGeometry, arguments);
 	}
-	PROXY.init(ShapeGeometry);
+	PROXY.init(ShapeGeometry, []);
 
 	// #PROXY1.0.0 Classes:SphereGeometry Uses:SphereGeometry
 
@@ -26810,7 +26891,7 @@
 	function wrap_SphereGeometry() {
 		return PROXY.wrap(SphereGeometry, arguments);
 	}
-	PROXY.init(SphereGeometry);
+	PROXY.init(SphereGeometry, []);
 
 	// #PROXY1.0.0 Classes:TetrahedronGeometry Uses:TetrahedronGeometry
 
@@ -26838,7 +26919,7 @@
 	function wrap_TetrahedronGeometry() {
 		return PROXY.wrap(TetrahedronGeometry, arguments);
 	}
-	PROXY.init(TetrahedronGeometry);
+	PROXY.init(TetrahedronGeometry, []);
 
 	// #PROXY1.0.0 Classes:TorusGeometry Uses:TorusGeometry
 
@@ -26918,7 +26999,7 @@
 	function wrap_TorusGeometry() {
 		return PROXY.wrap(TorusGeometry, arguments);
 	}
-	PROXY.init(TorusGeometry);
+	PROXY.init(TorusGeometry, []);
 
 	// #PROXY1.0.0 Classes:TorusKnotGeometry Uses:TorusKnotGeometry
 
@@ -27030,7 +27111,7 @@
 	function wrap_TorusKnotGeometry() {
 		return PROXY.wrap(TorusKnotGeometry, arguments);
 	}
-	PROXY.init(TorusKnotGeometry);
+	PROXY.init(TorusKnotGeometry, []);
 
 	// #PROXY1.0.0 Classes:TubeGeometry Uses:TubeGeometry
 
@@ -27155,7 +27236,7 @@
 	function wrap_TubeGeometry() {
 		return PROXY.wrap(TubeGeometry, arguments);
 	}
-	PROXY.init(TubeGeometry);
+	PROXY.init(TubeGeometry, []);
 
 	// #PROXY1.0.0 Classes:WireframeGeometry Uses:
 
@@ -27253,7 +27334,7 @@
 	function wrap_WireframeGeometry() {
 		return PROXY.wrap(WireframeGeometry, arguments);
 	}
-	PROXY.init(WireframeGeometry);
+	PROXY.init(WireframeGeometry, []);
 
 	var Geometries = /*#__PURE__*/Object.freeze({
 		__proto__: null,
@@ -27326,7 +27407,7 @@
 	function wrap_ShadowMaterial() {
 		return PROXY.wrap(ShadowMaterial, arguments);
 	}
-	PROXY.init(ShadowMaterial);
+	PROXY.init(ShadowMaterial, []);
 
 	// #PROXY1.0.0 Classes:RawShaderMaterial Uses:
 
@@ -27342,7 +27423,7 @@
 	function wrap_RawShaderMaterial() {
 		return PROXY.wrap(RawShaderMaterial, arguments);
 	}
-	PROXY.init(RawShaderMaterial);
+	PROXY.init(RawShaderMaterial, []);
 
 	// #PROXY1.0.0 Classes:MeshStandardMaterial Uses:
 
@@ -27431,7 +27512,7 @@
 	function wrap_MeshStandardMaterial() {
 		return PROXY.wrap(MeshStandardMaterial, arguments);
 	}
-	PROXY.init(MeshStandardMaterial);
+	PROXY.init(MeshStandardMaterial, ["map", "lightMap", "aoMap", "emissiveMap", "bumpMap", "normalMap", "displacementMap", "roughnessMap", "metalnessMap", "alphaMap", "envMap"]);
 
 	// #PROXY1.0.0 Classes:MeshPhysicalMaterial Uses:
 
@@ -27571,7 +27652,7 @@
 	function wrap_MeshPhysicalMaterial() {
 		return PROXY.wrap(MeshPhysicalMaterial, arguments);
 	}
-	PROXY.init(MeshPhysicalMaterial);
+	PROXY.init(MeshPhysicalMaterial, ["clearcoatMap", "clearcoatRoughnessMap", "clearcoatNormalMap", "iridescenceMap", "iridescenceThicknessMap", "sheenColorMap", "sheenRoughnessMap", "transmissionMap", "thicknessMap", "specularIntensityMap", "specularColorMap", "map", "lightMap", "aoMap", "emissiveMap", "bumpMap", "normalMap", "displacementMap", "roughnessMap", "metalnessMap", "alphaMap", "envMap"]);
 
 	// #PROXY1.0.0 Classes:MeshPhongMaterial Uses:
 
@@ -27656,7 +27737,7 @@
 	function wrap_MeshPhongMaterial() {
 		return PROXY.wrap(MeshPhongMaterial, arguments);
 	}
-	PROXY.init(MeshPhongMaterial);
+	PROXY.init(MeshPhongMaterial, ["map", "lightMap", "aoMap", "emissiveMap", "bumpMap", "normalMap", "displacementMap", "specularMap", "alphaMap", "envMap"]);
 
 	// #PROXY1.0.0 Classes:MeshToonMaterial Uses:
 
@@ -27729,7 +27810,7 @@
 	function wrap_MeshToonMaterial() {
 		return PROXY.wrap(MeshToonMaterial, arguments);
 	}
-	PROXY.init(MeshToonMaterial);
+	PROXY.init(MeshToonMaterial, ["map", "gradientMap", "lightMap", "lightMapIntensity", "aoMap", "aoMapIntensity", "emissiveMap", "bumpMap", "normalMap", "displacementMap", "alphaMap"]);
 
 	// #PROXY1.0.0 Classes:MeshNormalMaterial Uses:
 
@@ -27773,7 +27854,7 @@
 	function wrap_MeshNormalMaterial() {
 		return PROXY.wrap(MeshNormalMaterial, arguments);
 	}
-	PROXY.init(MeshNormalMaterial);
+	PROXY.init(MeshNormalMaterial, ["bumpMap", "normalMap", "displacementMap"]);
 
 	// #PROXY1.0.0 Classes:MeshLambertMaterial Uses:
 
@@ -27854,7 +27935,7 @@
 	function wrap_MeshLambertMaterial() {
 		return PROXY.wrap(MeshLambertMaterial, arguments);
 	}
-	PROXY.init(MeshLambertMaterial);
+	PROXY.init(MeshLambertMaterial, ["map", "lightMap", "aoMap", "emissiveMap", "bumpMap", "normalMap", "displacementMap", "specularMap", "alphaMap", "envMap"]);
 
 	// #PROXY1.0.0 Classes:MeshMatcapMaterial Uses:
 
@@ -27911,7 +27992,7 @@
 	function wrap_MeshMatcapMaterial() {
 		return PROXY.wrap(MeshMatcapMaterial, arguments);
 	}
-	PROXY.init(MeshMatcapMaterial);
+	PROXY.init(MeshMatcapMaterial, ["map", "bumpMap", "normalMap", "displacementMap", "alphaMap"]);
 
 	// #PROXY1.0.0 Classes:LineDashedMaterial Uses:
 
@@ -27939,7 +28020,7 @@
 	function wrap_LineDashedMaterial() {
 		return PROXY.wrap(LineDashedMaterial, arguments);
 	}
-	PROXY.init(LineDashedMaterial);
+	PROXY.init(LineDashedMaterial, []);
 
 	function arraySlice(array, from, to) {
 		if (isTypedArray(array)) {
@@ -29930,7 +30011,7 @@
 	function wrap_Light() {
 		return PROXY.wrap(Light, arguments);
 	}
-	PROXY.init(Light);
+	PROXY.init(Light, ["children"]);
 
 	// #PROXY1.0.0 Classes:HemisphereLight Uses:
 
@@ -29955,7 +30036,7 @@
 	function wrap_HemisphereLight() {
 		return PROXY.wrap(HemisphereLight, arguments);
 	}
-	PROXY.init(HemisphereLight);
+	PROXY.init(HemisphereLight, ["children"]);
 
 	// #PROXY1.0.0 Classes:LightShadow Uses:
 
@@ -30060,7 +30141,7 @@
 	function wrap_LightShadow() {
 		return PROXY.wrap(LightShadow, arguments);
 	}
-	PROXY.init(LightShadow);
+	PROXY.init(LightShadow, ["camera", "map", "mapPass"]);
 
 	// #PROXY1.0.0 Classes:SpotLightShadow Uses:PerspectiveCamera
 
@@ -30101,7 +30182,7 @@
 	function wrap_SpotLightShadow() {
 		return PROXY.wrap(SpotLightShadow, arguments);
 	}
-	PROXY.init(SpotLightShadow);
+	PROXY.init(SpotLightShadow, ["camera", "map", "mapPass"]);
 
 	// #PROXY1.0.0 Classes:SpotLight Uses:Object3D,SpotLightShadow
 
@@ -30159,7 +30240,7 @@
 	function wrap_SpotLight() {
 		return PROXY.wrap(SpotLight, arguments);
 	}
-	PROXY.init(SpotLight);
+	PROXY.init(SpotLight, ["target", "map", "shadow", "children"]);
 
 	// #PROXY1.0.0 Classes:PointLightShadow Uses:PerspectiveCamera
 
@@ -30234,7 +30315,7 @@
 	function wrap_PointLightShadow() {
 		return PROXY.wrap(PointLightShadow, arguments);
 	}
-	PROXY.init(PointLightShadow);
+	PROXY.init(PointLightShadow, ["camera", "map", "mapPass"]);
 
 	// #PROXY1.0.0 Classes:PointLight Uses:PointLightShadow
 
@@ -30280,7 +30361,7 @@
 	function wrap_PointLight() {
 		return PROXY.wrap(PointLight, arguments);
 	}
-	PROXY.init(PointLight);
+	PROXY.init(PointLight, ["shadow", "children"]);
 
 	// #PROXY1.0.0 Classes:DirectionalLightShadow Uses:OrthographicCamera
 
@@ -30298,7 +30379,7 @@
 	function wrap_DirectionalLightShadow() {
 		return PROXY.wrap(DirectionalLightShadow, arguments);
 	}
-	PROXY.init(DirectionalLightShadow);
+	PROXY.init(DirectionalLightShadow, ["camera", "map", "mapPass"]);
 
 	// #PROXY1.0.0 Classes:DirectionalLight Uses:Object3D,DirectionalLightShadow
 
@@ -30335,7 +30416,7 @@
 	function wrap_DirectionalLight() {
 		return PROXY.wrap(DirectionalLight, arguments);
 	}
-	PROXY.init(DirectionalLight);
+	PROXY.init(DirectionalLight, ["target", "shadow", "children"]);
 
 	// #PROXY1.0.0 Classes:AmbientLight Uses:
 
@@ -30351,7 +30432,7 @@
 	function wrap_AmbientLight() {
 		return PROXY.wrap(AmbientLight, arguments);
 	}
-	PROXY.init(AmbientLight);
+	PROXY.init(AmbientLight, ["children"]);
 
 	// #PROXY1.0.0 Classes:RectAreaLight Uses:
 
@@ -30393,7 +30474,7 @@
 	function wrap_RectAreaLight() {
 		return PROXY.wrap(RectAreaLight, arguments);
 	}
-	PROXY.init(RectAreaLight);
+	PROXY.init(RectAreaLight, ["children"]);
 
 	/**
 	 * Primary reference:
@@ -30608,7 +30689,7 @@
 	function wrap_LightProbe() {
 		return PROXY.wrap(LightProbe, arguments);
 	}
-	PROXY.init(LightProbe);
+	PROXY.init(LightProbe, ["children"]);
 
 	class MaterialLoader extends Loader {
 		constructor(manager) {
@@ -30938,7 +31019,7 @@
 	function wrap_InstancedBufferGeometry() {
 		return PROXY.wrap(InstancedBufferGeometry, arguments);
 	}
-	PROXY.init(InstancedBufferGeometry);
+	PROXY.init(InstancedBufferGeometry, []);
 
 	class BufferGeometryLoader extends Loader {
 		constructor(manager) {
@@ -31904,7 +31985,7 @@
 	function wrap_HemisphereLightProbe() {
 		return PROXY.wrap(HemisphereLightProbe, arguments);
 	}
-	PROXY.init(HemisphereLightProbe);
+	PROXY.init(HemisphereLightProbe, ["children"]);
 
 	// #PROXY1.0.0 Classes:AmbientLightProbe Uses:
 
@@ -31922,7 +32003,7 @@
 	function wrap_AmbientLightProbe() {
 		return PROXY.wrap(AmbientLightProbe, arguments);
 	}
-	PROXY.init(AmbientLightProbe);
+	PROXY.init(AmbientLightProbe, ["children"]);
 
 	// #PROXY1.0.0 Classes:StereoCamera Uses:PerspectiveCamera
 
@@ -32006,7 +32087,7 @@
 	function wrap_StereoCamera() {
 		return PROXY.wrap(StereoCamera, arguments);
 	}
-	PROXY.init(StereoCamera);
+	PROXY.init(StereoCamera, ["cameraL", "cameraR"]);
 
 	class Clock {
 		constructor(autoStart = true) {
@@ -34639,7 +34720,7 @@
 	function wrap_UniformsGroup() {
 		return PROXY.wrap(UniformsGroup, arguments);
 	}
-	PROXY.init(UniformsGroup);
+	PROXY.init(UniformsGroup, []);
 
 	class InstancedInterleavedBuffer extends InterleavedBuffer {
 		constructor(array, stride, meshPerAttribute = 1) {
@@ -35171,7 +35252,7 @@
 	function wrap_SpotLightHelper() {
 		return PROXY.wrap(SpotLightHelper, arguments);
 	}
-	PROXY.init(SpotLightHelper);
+	PROXY.init(SpotLightHelper, []);
 
 	// #PROXY1.0.0 Classes:SkeletonHelper Uses:BufferGeometry,LineBasicMaterial
 
@@ -35274,7 +35355,7 @@
 	function wrap_SkeletonHelper() {
 		return PROXY.wrap(SkeletonHelper, arguments);
 	}
-	PROXY.init(SkeletonHelper);
+	PROXY.init(SkeletonHelper, ["root"]);
 
 	// #PROXY1.0.0 Classes:PointLightHelper Uses:SphereGeometry,MeshBasicMaterial
 
@@ -35344,7 +35425,7 @@
 	function wrap_PointLightHelper() {
 		return PROXY.wrap(PointLightHelper, arguments);
 	}
-	PROXY.init(PointLightHelper);
+	PROXY.init(PointLightHelper, []);
 
 	// #PROXY1.0.0 Classes:HemisphereLightHelper Uses:OctahedronGeometry,MeshBasicMaterial,Mesh
 
@@ -35419,7 +35500,7 @@
 	function wrap_HemisphereLightHelper() {
 		return PROXY.wrap(HemisphereLightHelper, arguments);
 	}
-	PROXY.init(HemisphereLightHelper);
+	PROXY.init(HemisphereLightHelper, ["light", "children"]);
 
 	// #PROXY1.0.0 Classes:GridHelper Uses:BufferGeometry,LineBasicMaterial
 
@@ -35469,7 +35550,7 @@
 	function wrap_GridHelper() {
 		return PROXY.wrap(GridHelper, arguments);
 	}
-	PROXY.init(GridHelper);
+	PROXY.init(GridHelper, ["geometry", "material", "children"]);
 
 	// #PROXY1.0.0 Classes:PolarGridHelper Uses:BufferGeometry,LineBasicMaterial
 
@@ -35536,7 +35617,7 @@
 	function wrap_PolarGridHelper() {
 		return PROXY.wrap(PolarGridHelper, arguments);
 	}
-	PROXY.init(PolarGridHelper);
+	PROXY.init(PolarGridHelper, []);
 
 	// #PROXY1.0.0 Classes:DirectionalLightHelper Uses:BufferGeometry,LineBasicMaterial,Line
 
@@ -35618,7 +35699,7 @@
 	function wrap_DirectionalLightHelper() {
 		return PROXY.wrap(DirectionalLightHelper, arguments);
 	}
-	PROXY.init(DirectionalLightHelper);
+	PROXY.init(DirectionalLightHelper, ["light", "lightPlane", "targetLine", "children"]);
 
 	// #PROXY1.0.0 Classes:CameraHelper Uses:Camera,BufferGeometry,LineBasicMaterial
 
@@ -35871,7 +35952,7 @@
 	function wrap_CameraHelper() {
 		return PROXY.wrap(CameraHelper, arguments);
 	}
-	PROXY.init(CameraHelper);
+	PROXY.init(CameraHelper, ["camera", "geometry", "material", "children"]);
 
 	// #PROXY1.0.0 Classes:BoxHelper Uses:BufferGeometry,LineBasicMaterial
 
@@ -35974,7 +36055,7 @@
 	function wrap_BoxHelper() {
 		return PROXY.wrap(BoxHelper, arguments);
 	}
-	PROXY.init(BoxHelper);
+	PROXY.init(BoxHelper, ["object", "geometry", "material", "children"]);
 
 	// #PROXY1.0.0 Classes:Box3Helper Uses:BufferGeometry,LineBasicMaterial
 
@@ -36014,7 +36095,7 @@
 	function wrap_Box3Helper() {
 		return PROXY.wrap(Box3Helper, arguments);
 	}
-	PROXY.init(Box3Helper);
+	PROXY.init(Box3Helper, ["box", "geometry", "material", "children"]);
 
 	// #PROXY1.0.0 Classes:PlaneHelper Uses:BufferGeometry,LineBasicMaterial,Mesh,MeshBasicMaterial
 
@@ -36073,7 +36154,7 @@
 	function wrap_PlaneHelper() {
 		return PROXY.wrap(PlaneHelper, arguments);
 	}
-	PROXY.init(PlaneHelper);
+	PROXY.init(PlaneHelper, ["geometry", "material", "children"]);
 
 	// #PROXY1.0.0 Classes:ArrowHelper Uses:BufferGeometry,CylinderGeometry,Line,LineBasicMaterial,Mesh,MeshBasicMaterial
 
@@ -36172,7 +36253,7 @@
 	function wrap_ArrowHelper() {
 		return PROXY.wrap(ArrowHelper, arguments);
 	}
-	PROXY.init(ArrowHelper);
+	PROXY.init(ArrowHelper, ["line", "cone", "children"]);
 
 	// #PROXY1.0.0 Classes:AxesHelper Uses:BufferGeometry,LineBasicMaterial
 
@@ -36223,7 +36304,7 @@
 	function wrap_AxesHelper() {
 		return PROXY.wrap(AxesHelper, arguments);
 	}
-	PROXY.init(AxesHelper);
+	PROXY.init(AxesHelper, ["geometry", "material", "children"]);
 
 	class ShapePath {
 		constructor() {
