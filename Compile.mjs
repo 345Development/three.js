@@ -1,6 +1,7 @@
 import fs, { readFileSync, writeFileSync } from "fs";
 import path from "path";
-import { BuildDef } from "./proxy/defs.js";
+import defs from "./proxy/defs.js";
+const { BuildDef } = defs;
 
 // REMINDERS:
 // # to "compile" our 345 version of ThreeJS from original src
@@ -311,20 +312,23 @@ walk(SrcPath, function (err, results) {
       if(def.export){
         // do the export replace
         // see if we can find the export statement for the class/func
-        const exportInfo = FindExport(str,def.name);       
-        if(exportInfo){
-          let exportStr = "export function wrap_"+def.name+"(){ return PROXY.wrap("+def.name+",arguments); }" + EOL;
-          updates.push({
-            index:exportInfo.index,
-            length:0,//exportInfo.length,
-            replace:exportStr
-          });
+        // const exportInfo = FindExport(str,def.name);       
+        // if(exportInfo){
+        //   let exportStr = "export function wrap_"+def.name+"(){ return PROXY.wrap("+def.name+",arguments); }" + EOL;
+        //   updates.push({
+        //     index:exportInfo.index,
+        //     length:0,//exportInfo.length,
+        //     replace:exportStr
+        //   });
 
-          exports.set(def.name,fileRel);
-        } else if(def.export){
-          console.warn("Failed to find expected export for "+def.name);
-          throw "export missing";
-        }      
+        //   exports.set(def.name,fileRel);
+        // } else if(def.export){
+        //   console.warn("Failed to find expected export for "+def.name);
+        //   throw "export missing";
+        // }   
+        // const exportInfo = FindExport(str,def.name);
+        exports.set(def.name,fileRel);
+        extra += "export function wrap_"+def.name+"(){ return PROXY.wrap("+def.name+",arguments); }" + EOL;   
       }
     }
    

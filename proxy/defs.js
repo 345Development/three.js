@@ -5,7 +5,7 @@
 // TODOs
 // more in core, extras, animation
 
-export const BuildDef = {
+const BuildDef = {
   ////////////////////////// TEXTURES //////////////////////////
 	"Texture": {
 		file: "textures/Texture.js",
@@ -983,3 +983,5 @@ export const BuildDef = {
   //   attrs:[]
 	// },  
 }
+
+module.exports = { BuildDef };
