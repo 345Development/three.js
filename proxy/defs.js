@@ -3,7 +3,7 @@
 
 
 // TODOs
-// more in core, extras
+// more in core, extras, animation
 
 export const BuildDef = {
   ////////////////////////// TEXTURES //////////////////////////
@@ -793,6 +793,7 @@ export const BuildDef = {
 	"WebGLRenderer": {
     file: "renderers/WebGLRenderer.js",
     mode: "func",
+    extends: undefined,
     export: true,
     dispose: true,
     // attrs: ??
@@ -843,6 +844,23 @@ export const BuildDef = {
     extends:"WebGLRenderTarget",
 		export: true,
     dispose: false,
+	},
+	"WebXRManager": {
+		file: "renderers/webxr/WebXRManager.js",
+		mode: "class",
+    extends:"EventDispatcher",
+		export: true,
+    dispose: true,
+    attrs:[]  // ???? todo..
+	},  
+  //////////////////// OTHERS //////////////////////////
+	"UniformsGroup": {
+		file: "core/UniformsGroup.js",
+		mode: "class",
+    extends:"EventDispatcher",
+		export: true,
+    dispose: true,
+    attrs:[]
 	},
   //////////////////// EXTRAS //////////////////////////
   // intended to be used as a static ?? todo handle better
@@ -954,5 +972,14 @@ export const BuildDef = {
 		export: true,
     dispose:true,
     attr:["light"]
-	}
+	},
+  // //////////////////// ANIMATIONS //////////////////////////
+	// "AnimationMixer": {
+	// 	file: "animation/AnimationMixer.js",
+	// 	mode: "class",
+  //   extends:"EventDispatcher",
+	// 	export: true,
+  //   dispose: false,
+  //   attrs:[]
+	// },  
 }
