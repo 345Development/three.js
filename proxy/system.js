@@ -155,12 +155,19 @@ const PROXY = {
 		console.log("dispose " + this.constructor.name);
 		this.__dispose?.();
 	},
-	wrap: function (cls, args) {
+	wrapF: function (cls, args) {
 		console.log("user create " + cls.name);
 		return PROXY.scope(() => {
 			return new cls(...args);
 		}, true);
 	},
+  wrapC: function (cb){
+    // start of three base class create
+    let inst = cb();
+    // end of three base class create
+    console.log("user create " + inst.constructor.name);
+    return inst;
+  },
 	internal: function (info) {
 		var args = Array.prototype.slice.call(arguments, 1);
 		const name = info.c.name;

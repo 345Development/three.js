@@ -328,7 +328,18 @@ walk(SrcPath, function (err, results) {
         // }   
         // const exportInfo = FindExport(str,def.name);
         exports.set(def.name,fileRel);
-        extra += "export function wrap_"+def.name+"(){ return PROXY.wrap("+def.name+",arguments); }" + EOL;   
+        if(def.mode === "class"){
+        /*
+        class wrap_CC extends CC {
+          constructor(){
+            wrapF(()=>super(...arguments));
+          }
+        }    
+        */
+          extra += "export class wrap_"+def.name+" extends "+def.name+"{ constructor(){ PROXY.wrapC(()=>super(...arguments)); }}" + EOL;   
+        } else {
+          extra += "export function wrap_"+def.name+"(){ return PROXY.wrapF("+def.name+",arguments); }" + EOL;   
+        }
       }
     }
    
