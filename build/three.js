@@ -18,66 +18,6 @@
 		inst.__mmc = mmc;
 		mmSet.add(inst);
 	}
-
-	function mmScan() {
-		mmc++;
-
-		for (const o of mmSet) {
-			// look for token (without creating)
-			if (o.__token?.deref()) {
-				// held object
-				mmMark(o);
-			}
-		} // no check which things were not marked
-
-
-		let marked = 0,
-				unmarked = 0;
-
-		for (const o of mmSet) {
-			if (o.__mmc === mmc) marked++;else unmarked++;
-		}
-
-		return {
-			marked,
-			unmarked
-		};
-	}
-
-	function mmMark(o) {
-		o.__mmc = mmc;
-		o.__attrs?.forEach(a => mmMarkA(o, a));
-	}
-
-	function mmMarkA(o, a) {
-		if (a in o) mmMarkQ(o[a]);
-	}
-
-	function mmMarkQ(o) {
-		if (typeof o === 'object') {
-			// arrays must be iterated
-			if (Array.isArray(o)) {
-				o.forEach(e => mmMarkQ(e));
-			} else if (o && '__mmc' in o) {
-				// needs to have an mmc (or def)
-				mmMark(o);
-			}
-		}
-	}
-
-	function mmReset() {
-		// dispose of all
-		for (const o of mmSet) o.dispose?.();
-
-		mmSet.clear();
-	}
-
-	const reset = mmReset;
-	//export { reset };
-	const scan = mmScan;
-	//export { scan };
-	
-	//////////////
 	// TOKENS
 
 	const fr = new FinalizationRegistry(res => {
