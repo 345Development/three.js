@@ -89,7 +89,8 @@ const MM = { reset:mmReset, scan:mmScan, clean:mmClean, mmSet };
 // TOKENS
 
 const fr = new FinalizationRegistry(res => {
-	console.log("finalise on", res.constructor.name);
+  if(PROXY.debug)
+    console.log("finalise on", res.constructor.name);
 	//res?.dispose?.(true);
 });
 
@@ -152,6 +153,7 @@ function initClass(cls,attrs) {
 }
 
 const PROXY = {
+  debug: false,
 	stack: [],
   before(n=false){
     const s=PROXY.stack;
@@ -170,13 +172,15 @@ const PROXY = {
 	wrapF: function (cls, args) {
     const b=PROXY.before(true),
       inst = new cls(...args);
-    console.log("user create " + cls.name);      
+    if(PROXY.debug)
+      console.log("user create " + cls.name);      
     return PROXY.after(b,inst);
 	},
   wrapC: function (cb){
     const b=PROXY.before(true),
       inst = cb();
-    console.log("user create " + inst.constructor.name);
+    if(PROXY.debug)
+      console.log("user create " + inst.constructor.name);
     return PROXY.after(b,inst);    
   },
 	internal: function (info) {
@@ -184,7 +188,8 @@ const PROXY = {
 		const name = info.c.name;
     const b=PROXY.before(false),
       inst = new info.c(...args);
-    console.log("internal create " + name);      
+    if(PROXY.debug)      
+      console.log("internal create " + name);      
     return PROXY.after(b,inst);
 	},
 	init: function (cls,attrs) {
