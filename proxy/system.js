@@ -56,8 +56,12 @@ function mmReset(){
 		o.dispose?.();
 	mmSet.clear();
 }
-exports.reset = mmReset;
-exports.scan = mmScan;
+
+
+const reset = mmReset;
+export { reset };
+const scan = mmScan;
+export { scan };
 
 
 //////////////

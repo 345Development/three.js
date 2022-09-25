@@ -72,8 +72,12 @@
 		mmSet.clear();
 	}
 
-	exports.reset = mmReset;
-	exports.scan = mmScan; //////////////
+	const reset = mmReset;
+	//export { reset };
+	const scan = mmScan;
+	//export { scan };
+	
+	//////////////
 	// TOKENS
 
 	const fr = new FinalizationRegistry(res => {
