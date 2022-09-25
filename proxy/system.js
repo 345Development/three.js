@@ -57,9 +57,9 @@ function mmReset(){
 	mmSet.clear();
 }
 
+exports.reset = mmReset;
+exports.scan = mmScan;
 
-const reset = mmReset;
-const scan = mmScan;
 
 
 //////////////
