@@ -454,7 +454,7 @@ walk(SrcPath, function (err, results) {
 
   // add our header 
   let exportHeader = FileHeader + EOL;
-  exportHeader += "export { PROXY } from \"./345/system.js\";"+EOL+EOL;
+  exportHeader += "export { PROXY, MM } from \"./345/system.js\";"+EOL+EOL;
 
   // search the exports for those matching ones
   // we will override... change them
