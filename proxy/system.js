@@ -59,9 +59,7 @@ function mmReset(){
 
 
 const reset = mmReset;
-export { reset };
 const scan = mmScan;
-export { scan };
 
 
 //////////////
