@@ -11,7 +11,8 @@
 
 	///////////////////////////////////////////////////////////////////////
 	// MEMORY MANAGEMENT
-	let mmc = 0;
+	let mmc = 0,
+			mmGuard = false;
 	const mmSet = new Set();
 
 	function mmNew(inst) {
@@ -20,7 +21,11 @@
 	}
 
 	function mmScan() {
-		mmc++;
+		mmGuard = true; // for when we make this fn a generator
+
+		mmc++; // do the static scope objects
+
+		PROXY.stack[0].forEach(o => mmMark(o));
 
 		for (const o of mmSet) {
 			// look for token (without creating)
@@ -38,14 +43,32 @@
 			if (o.__mmc === mmc) marked++;else unmarked++;
 		}
 
+		mmGuard = false;
 		return {
 			marked,
 			unmarked
 		};
 	}
 
+	function mmClean() {
+		if (mmGuard) return -1; // dispose on anything not up to latest mark
+
+		let c = 0;
+
+		for (const o of mmSet) {
+			if (o.__mmc !== mmc) {
+				o.__dispose?.();
+				mmSet.delete(o);
+				c++;
+			}
+		}
+
+		return c;
+	}
+
 	function mmMark(o) {
 		o.__mmc = mmc;
+		o.__owned?.forEach(e => mmMark(e));
 		o.__attrs?.forEach(a => mmMarkA(o, a));
 	}
 
@@ -74,7 +97,9 @@
 
 	const MM = {
 		reset: mmReset,
-		scan: mmScan
+		scan: mmScan,
+		clean: mmClean,
+		mmSet
 	};
 	// TOKENS
 
@@ -142,53 +167,47 @@
 
 	const PROXY = {
 		stack: [[]],
-		// stack of scopes; initial one is global
-		scope: function (cb, usr) {
-			if (usr) PROXY.stack.unshift([]); // create a new scopes array on stack
 
-			const scope = PROXY.stack[0];
-			let inst = cb(); // after the instantiate..
+		before(newCtx = false) {
+			const s = PROXY.stack;
+			if (newCtx) s.push([]);
+			return s[s.length - 1];
+		},
 
-			if (usr) {
-				//
-				if (scope.length > 0) {
-					console.log(inst.constructor.name + " owns " + scope.map(i => i.constructor.name).join(","));
-				} // remove usr scope
-
-
-				PROXY.stack.shift();
-			} else {
-				scope.push(inst);
+		after(b, inst) {
+			// add all the owned classes
+			if (b) {
+				inst.__owned = b;
+				PROXY.stack.pop();
 			}
 
 			mmNew(inst);
 			return inst;
 		},
+
 		disposeFn: function () {
 			// call the original dispose 
-			console.log("dispose " + this.constructor.name);
-			this.__dispose?.();
+			console.log("ignore user dispose " + this.constructor.name); //this.__dispose?.();
 		},
 		wrapF: function (cls, args) {
+			const b = PROXY.before(true),
+						inst = new cls(...args);
 			console.log("user create " + cls.name);
-			return PROXY.scope(() => {
-				return new cls(...args);
-			}, true);
+			return PROXY.after(b, inst);
 		},
 		wrapC: function (cb) {
-			// start of three base class create
-			let inst = cb(); // end of three base class create
-
+			const b = PROXY.before(true),
+						inst = cb();
 			console.log("user create " + inst.constructor.name);
-			return inst;
+			return PROXY.after(b, inst);
 		},
 		internal: function (info) {
 			var args = Array.prototype.slice.call(arguments, 1);
 			const name = info.c.name;
-			console.log("internal create " + name + " in " + info.w);
-			return PROXY.scope(() => {
-				return new info.c(...args);
-			}, false);
+			const b = PROXY.before(false),
+						inst = new info.c(...args);
+			console.log("internal create " + name);
+			return PROXY.after(b, inst);
 		},
 		init: function (cls, attrs) {
 			initClass(cls, attrs);

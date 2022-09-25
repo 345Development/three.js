@@ -7,7 +7,7 @@
 // MEMORY MANAGEMENT
 
 
-let mmc = 0;
+let mmc = 0, mmGuard = false;
 const mmSet = new Set();
 
 function mmNew(inst){
@@ -16,7 +16,10 @@ function mmNew(inst){
 }
 
 function mmScan(){
+  mmGuard = true; // for when we make this fn a generator
   mmc++;
+  // do the static scope objects
+  PROXY.stack[0].forEach(o=>mmMark(o));
   for(const o of mmSet){
     // look for token (without creating)
     if(o.__token?.deref()){
@@ -32,11 +35,27 @@ function mmScan(){
     else
       unmarked++;
   }
+  mmGuard = false;
   return {marked,unmarked};
+}
+
+function mmClean(){
+  if(mmGuard) return -1;
+  // dispose on anything not up to latest mark
+  let c = 0;
+  for(const o of mmSet){
+    if(o.__mmc !== mmc) {
+      o.__dispose?.();
+      mmSet.delete(o);
+      c++;
+    }
+  }  
+  return c;
 }
 
 function mmMark(o){
   o.__mmc = mmc;
+  o.__owned?.forEach(e=>mmMark(e));
   o.__attrs?.forEach(a=>mmMarkA(o,a));
 }
 
@@ -63,7 +82,7 @@ function mmReset(){
   mmSet.clear();
 }
 
-const MM = { reset:mmReset, scan:mmScan };
+const MM = { reset:mmReset, scan:mmScan, clean:mmClean, mmSet };
 
 
 
@@ -132,52 +151,44 @@ function initClass(cls,attrs) {
 
 const PROXY = {
 	stack: [[]],
-	// stack of scopes; initial one is global
-	scope: function (cb, usr) {
-		if (usr) PROXY.stack.unshift([]); // create a new scopes array on stack
-
-		const scope = PROXY.stack[0];
-		let inst = cb(); // after the instantiate..
-
-		if (usr) {
-			//
-			if (scope.length > 0) {
-				console.log(inst.constructor.name + " owns " + scope.map(i => i.constructor.name).join(","));
-			} // remove usr scope
-			PROXY.stack.shift();
-		} else {
-			scope.push(inst);
-		}
-
-		mmNew(inst);
-
-		return inst;
-	},
+  before(newCtx=false){
+    const s=PROXY.stack;
+    if(newCtx) s.push([]);
+    return s[s.length-1];
+  },
+  after(b,inst){
+    // add all the owned classes
+    if(b) {
+      inst.__owned = b;
+      PROXY.stack.pop();
+    }
+    mmNew(inst);
+    return inst;
+  },
 	disposeFn: function () {
 		// call the original dispose 
-		console.log("dispose " + this.constructor.name);
-		this.__dispose?.();
+		console.log("ignore user dispose " + this.constructor.name);
+		//this.__dispose?.();
 	},
 	wrapF: function (cls, args) {
-		console.log("user create " + cls.name);
-		return PROXY.scope(() => {
-			return new cls(...args);
-		}, true);
+    const b=PROXY.before(true),
+      inst = new cls(...args);
+    console.log("user create " + cls.name);      
+    return PROXY.after(b,inst);
 	},
   wrapC: function (cb){
-    // start of three base class create
-    let inst = cb();
-    // end of three base class create
+    const b=PROXY.before(true),
+      inst = cb();
     console.log("user create " + inst.constructor.name);
-    return inst;
+    return PROXY.after(b,inst);    
   },
 	internal: function (info) {
 		var args = Array.prototype.slice.call(arguments, 1);
 		const name = info.c.name;
-		console.log("internal create " + name + " in " + info.w);
-		return PROXY.scope(() => {
-			return new info.c(...args);
-		}, false);
+    const b=PROXY.before(false),
+      inst = new info.c(...args);
+    console.log("internal create " + name);      
+    return PROXY.after(b,inst);
 	},
 	init: function (cls,attrs) {
 		initClass(cls,attrs);
@@ -713,29 +724,29 @@ function setQuaternionFromProperEuler( q, a, b, c, order ) {
 }
 
 var MathUtils = /*#__PURE__*/Object.freeze({
-	__proto__: null,
-	DEG2RAD: DEG2RAD,
-	RAD2DEG: RAD2DEG,
-	generateUUID: generateUUID,
-	clamp: clamp,
-	euclideanModulo: euclideanModulo,
-	mapLinear: mapLinear,
-	inverseLerp: inverseLerp,
-	lerp: lerp,
-	damp: damp,
-	pingpong: pingpong,
-	smoothstep: smoothstep,
-	smootherstep: smootherstep,
-	randInt: randInt,
-	randFloat: randFloat,
-	randFloatSpread: randFloatSpread,
-	seededRandom: seededRandom,
-	degToRad: degToRad,
-	radToDeg: radToDeg,
-	isPowerOfTwo: isPowerOfTwo,
-	ceilPowerOfTwo: ceilPowerOfTwo,
-	floorPowerOfTwo: floorPowerOfTwo,
-	setQuaternionFromProperEuler: setQuaternionFromProperEuler
+  __proto__: null,
+  DEG2RAD: DEG2RAD,
+  RAD2DEG: RAD2DEG,
+  generateUUID: generateUUID,
+  clamp: clamp,
+  euclideanModulo: euclideanModulo,
+  mapLinear: mapLinear,
+  inverseLerp: inverseLerp,
+  lerp: lerp,
+  damp: damp,
+  pingpong: pingpong,
+  smoothstep: smoothstep,
+  smootherstep: smootherstep,
+  randInt: randInt,
+  randFloat: randFloat,
+  randFloatSpread: randFloatSpread,
+  seededRandom: seededRandom,
+  degToRad: degToRad,
+  radToDeg: radToDeg,
+  isPowerOfTwo: isPowerOfTwo,
+  ceilPowerOfTwo: ceilPowerOfTwo,
+  floorPowerOfTwo: floorPowerOfTwo,
+  setQuaternionFromProperEuler: setQuaternionFromProperEuler
 });
 
 class Vector2 {
@@ -32439,17 +32450,17 @@ class SplineCurve extends Curve {
 SplineCurve.prototype.isSplineCurve = true;
 
 var Curves = /*#__PURE__*/Object.freeze({
-	__proto__: null,
-	ArcCurve: ArcCurve,
-	CatmullRomCurve3: CatmullRomCurve3,
-	CubicBezierCurve: CubicBezierCurve,
-	CubicBezierCurve3: CubicBezierCurve3,
-	EllipseCurve: EllipseCurve,
-	LineCurve: LineCurve,
-	LineCurve3: LineCurve3,
-	QuadraticBezierCurve: QuadraticBezierCurve,
-	QuadraticBezierCurve3: QuadraticBezierCurve3,
-	SplineCurve: SplineCurve
+  __proto__: null,
+  ArcCurve: ArcCurve,
+  CatmullRomCurve3: CatmullRomCurve3,
+  CubicBezierCurve: CubicBezierCurve,
+  CubicBezierCurve3: CubicBezierCurve3,
+  EllipseCurve: EllipseCurve,
+  LineCurve: LineCurve,
+  LineCurve3: LineCurve3,
+  QuadraticBezierCurve: QuadraticBezierCurve,
+  QuadraticBezierCurve3: QuadraticBezierCurve3,
+  SplineCurve: SplineCurve
 });
 
 /**************************************************************
@@ -35938,65 +35949,65 @@ PROXY.init(WireframeGeometry,[]);
 class wrap_WireframeGeometry extends WireframeGeometry{ constructor(){ PROXY.wrapC(()=>super(...arguments)); }}
 
 var Geometries = /*#__PURE__*/Object.freeze({
-	__proto__: null,
-	BoxGeometry: BoxGeometry,
-	BoxBufferGeometry: BoxGeometry,
-	wrap_BoxGeometry: wrap_BoxGeometry,
-	CircleGeometry: CircleGeometry,
-	CircleBufferGeometry: CircleGeometry,
-	wrap_CircleGeometry: wrap_CircleGeometry,
-	ConeGeometry: ConeGeometry,
-	ConeBufferGeometry: ConeGeometry,
-	wrap_ConeGeometry: wrap_ConeGeometry,
-	CylinderGeometry: CylinderGeometry,
-	CylinderBufferGeometry: CylinderGeometry,
-	wrap_CylinderGeometry: wrap_CylinderGeometry,
-	DodecahedronGeometry: DodecahedronGeometry,
-	DodecahedronBufferGeometry: DodecahedronGeometry,
-	wrap_DodecahedronGeometry: wrap_DodecahedronGeometry,
-	EdgesGeometry: EdgesGeometry,
-	wrap_EdgesGeometry: wrap_EdgesGeometry,
-	ExtrudeGeometry: ExtrudeGeometry,
-	ExtrudeBufferGeometry: ExtrudeGeometry,
-	wrap_ExtrudeGeometry: wrap_ExtrudeGeometry,
-	IcosahedronGeometry: IcosahedronGeometry,
-	IcosahedronBufferGeometry: IcosahedronGeometry,
-	wrap_IcosahedronGeometry: wrap_IcosahedronGeometry,
-	LatheGeometry: LatheGeometry,
-	LatheBufferGeometry: LatheGeometry,
-	wrap_LatheGeometry: wrap_LatheGeometry,
-	OctahedronGeometry: OctahedronGeometry,
-	OctahedronBufferGeometry: OctahedronGeometry,
-	wrap_OctahedronGeometry: wrap_OctahedronGeometry,
-	PlaneGeometry: PlaneGeometry,
-	PlaneBufferGeometry: PlaneGeometry,
-	wrap_PlaneGeometry: wrap_PlaneGeometry,
-	PolyhedronGeometry: PolyhedronGeometry,
-	PolyhedronBufferGeometry: PolyhedronGeometry,
-	wrap_PolyhedronGeometry: wrap_PolyhedronGeometry,
-	RingGeometry: RingGeometry,
-	RingBufferGeometry: RingGeometry,
-	wrap_RingGeometry: wrap_RingGeometry,
-	ShapeGeometry: ShapeGeometry,
-	ShapeBufferGeometry: ShapeGeometry,
-	wrap_ShapeGeometry: wrap_ShapeGeometry,
-	SphereGeometry: SphereGeometry,
-	SphereBufferGeometry: SphereGeometry,
-	wrap_SphereGeometry: wrap_SphereGeometry,
-	TetrahedronGeometry: TetrahedronGeometry,
-	TetrahedronBufferGeometry: TetrahedronGeometry,
-	wrap_TetrahedronGeometry: wrap_TetrahedronGeometry,
-	TorusGeometry: TorusGeometry,
-	TorusBufferGeometry: TorusGeometry,
-	wrap_TorusGeometry: wrap_TorusGeometry,
-	TorusKnotGeometry: TorusKnotGeometry,
-	TorusKnotBufferGeometry: TorusKnotGeometry,
-	wrap_TorusKnotGeometry: wrap_TorusKnotGeometry,
-	TubeGeometry: TubeGeometry,
-	TubeBufferGeometry: TubeGeometry,
-	wrap_TubeGeometry: wrap_TubeGeometry,
-	WireframeGeometry: WireframeGeometry,
-	wrap_WireframeGeometry: wrap_WireframeGeometry
+  __proto__: null,
+  BoxGeometry: BoxGeometry,
+  BoxBufferGeometry: BoxGeometry,
+  wrap_BoxGeometry: wrap_BoxGeometry,
+  CircleGeometry: CircleGeometry,
+  CircleBufferGeometry: CircleGeometry,
+  wrap_CircleGeometry: wrap_CircleGeometry,
+  ConeGeometry: ConeGeometry,
+  ConeBufferGeometry: ConeGeometry,
+  wrap_ConeGeometry: wrap_ConeGeometry,
+  CylinderGeometry: CylinderGeometry,
+  CylinderBufferGeometry: CylinderGeometry,
+  wrap_CylinderGeometry: wrap_CylinderGeometry,
+  DodecahedronGeometry: DodecahedronGeometry,
+  DodecahedronBufferGeometry: DodecahedronGeometry,
+  wrap_DodecahedronGeometry: wrap_DodecahedronGeometry,
+  EdgesGeometry: EdgesGeometry,
+  wrap_EdgesGeometry: wrap_EdgesGeometry,
+  ExtrudeGeometry: ExtrudeGeometry,
+  ExtrudeBufferGeometry: ExtrudeGeometry,
+  wrap_ExtrudeGeometry: wrap_ExtrudeGeometry,
+  IcosahedronGeometry: IcosahedronGeometry,
+  IcosahedronBufferGeometry: IcosahedronGeometry,
+  wrap_IcosahedronGeometry: wrap_IcosahedronGeometry,
+  LatheGeometry: LatheGeometry,
+  LatheBufferGeometry: LatheGeometry,
+  wrap_LatheGeometry: wrap_LatheGeometry,
+  OctahedronGeometry: OctahedronGeometry,
+  OctahedronBufferGeometry: OctahedronGeometry,
+  wrap_OctahedronGeometry: wrap_OctahedronGeometry,
+  PlaneGeometry: PlaneGeometry,
+  PlaneBufferGeometry: PlaneGeometry,
+  wrap_PlaneGeometry: wrap_PlaneGeometry,
+  PolyhedronGeometry: PolyhedronGeometry,
+  PolyhedronBufferGeometry: PolyhedronGeometry,
+  wrap_PolyhedronGeometry: wrap_PolyhedronGeometry,
+  RingGeometry: RingGeometry,
+  RingBufferGeometry: RingGeometry,
+  wrap_RingGeometry: wrap_RingGeometry,
+  ShapeGeometry: ShapeGeometry,
+  ShapeBufferGeometry: ShapeGeometry,
+  wrap_ShapeGeometry: wrap_ShapeGeometry,
+  SphereGeometry: SphereGeometry,
+  SphereBufferGeometry: SphereGeometry,
+  wrap_SphereGeometry: wrap_SphereGeometry,
+  TetrahedronGeometry: TetrahedronGeometry,
+  TetrahedronBufferGeometry: TetrahedronGeometry,
+  wrap_TetrahedronGeometry: wrap_TetrahedronGeometry,
+  TorusGeometry: TorusGeometry,
+  TorusBufferGeometry: TorusGeometry,
+  wrap_TorusGeometry: wrap_TorusGeometry,
+  TorusKnotGeometry: TorusKnotGeometry,
+  TorusKnotBufferGeometry: TorusKnotGeometry,
+  wrap_TorusKnotGeometry: wrap_TorusKnotGeometry,
+  TubeGeometry: TubeGeometry,
+  TubeBufferGeometry: TubeGeometry,
+  wrap_TubeGeometry: wrap_TubeGeometry,
+  WireframeGeometry: WireframeGeometry,
+  wrap_WireframeGeometry: wrap_WireframeGeometry
 });
 
 // #PROXY1.0.0 Classes:ShadowMaterial Uses:
@@ -37062,25 +37073,25 @@ PROXY.init(LineDashedMaterial,[]);
 class wrap_LineDashedMaterial extends LineDashedMaterial{ constructor(){ PROXY.wrapC(()=>super(...arguments)); }}
 
 var Materials = /*#__PURE__*/Object.freeze({
-	__proto__: null,
-	ShadowMaterial: ShadowMaterial,
-	SpriteMaterial: SpriteMaterial,
-	RawShaderMaterial: RawShaderMaterial,
-	ShaderMaterial: ShaderMaterial,
-	PointsMaterial: PointsMaterial,
-	MeshPhysicalMaterial: MeshPhysicalMaterial,
-	MeshStandardMaterial: MeshStandardMaterial,
-	MeshPhongMaterial: MeshPhongMaterial,
-	MeshToonMaterial: MeshToonMaterial,
-	MeshNormalMaterial: MeshNormalMaterial,
-	MeshLambertMaterial: MeshLambertMaterial,
-	MeshDepthMaterial: MeshDepthMaterial,
-	MeshDistanceMaterial: MeshDistanceMaterial,
-	MeshBasicMaterial: MeshBasicMaterial,
-	MeshMatcapMaterial: MeshMatcapMaterial,
-	LineDashedMaterial: LineDashedMaterial,
-	LineBasicMaterial: LineBasicMaterial,
-	Material: Material
+  __proto__: null,
+  ShadowMaterial: ShadowMaterial,
+  SpriteMaterial: SpriteMaterial,
+  RawShaderMaterial: RawShaderMaterial,
+  ShaderMaterial: ShaderMaterial,
+  PointsMaterial: PointsMaterial,
+  MeshPhysicalMaterial: MeshPhysicalMaterial,
+  MeshStandardMaterial: MeshStandardMaterial,
+  MeshPhongMaterial: MeshPhongMaterial,
+  MeshToonMaterial: MeshToonMaterial,
+  MeshNormalMaterial: MeshNormalMaterial,
+  MeshLambertMaterial: MeshLambertMaterial,
+  MeshDepthMaterial: MeshDepthMaterial,
+  MeshDistanceMaterial: MeshDistanceMaterial,
+  MeshBasicMaterial: MeshBasicMaterial,
+  MeshMatcapMaterial: MeshMatcapMaterial,
+  LineDashedMaterial: LineDashedMaterial,
+  LineBasicMaterial: LineBasicMaterial,
+  Material: Material
 });
 
 const AnimationUtils = {
