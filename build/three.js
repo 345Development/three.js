@@ -23,9 +23,9 @@
 	function mmScan() {
 		mmGuard = true; // for when we make this fn a generator
 
-		mmc++; // do the static scope objects
+		mmc++; // do the static scope objects (whatever is left on stack)
 
-		PROXY.stack[0].forEach(o => mmMark(o));
+		PROXY.stack.forEach(o => mmMark(o));
 
 		for (const o of mmSet) {
 			// look for token (without creating)
@@ -90,7 +90,7 @@
 
 	function mmReset() {
 		// dispose of all
-		for (const o of mmSet) o.dispose?.();
+		for (const o of mmSet) o.__dispose?.();
 
 		mmSet.clear();
 	}
@@ -131,6 +131,9 @@
 	// PROXY & INIT
 
 
+	function disposeIgnore() {//console.log("ignore user dispose " + this.constructor.name);
+	}
+
 	function initClass(cls, attrs) {
 		const pt = cls.prototype; // three js classes need to have properties added for token & ref
 
@@ -155,40 +158,37 @@
 			enumerable: true,
 			configurable: true
 		});
-		if (pt.dispose === PROXY.disposeFn) return;
+		if (pt.dispose === disposeIgnore) return;
 
 		if (pt.__dispose) {
 			// we have already messed with dispose (from a base class)
 			pt.__dispose = pt.dispose;
 		} else if (pt.dispose) pt.__dispose = pt.dispose;
 
-		pt.dispose = PROXY.disposeFn;
+		pt.dispose = disposeIgnore;
 	}
 
 	const PROXY = {
-		stack: [[]],
+		stack: [],
 
-		before(newCtx = false) {
-			const s = PROXY.stack;
-			if (newCtx) s.push([]);
-			return s[s.length - 1];
+		before(n = false) {
+			const s = PROXY.stack; //if(n) s.splice(0);	// clear 
+
+			return {
+				n,
+				i: s.length
+			};
 		},
 
 		after(b, inst) {
-			// add all the owned classes
-			if (b) {
-				inst.__owned = b;
-				PROXY.stack.pop();
-			}
-
+			// take above i off stack into owned
+			const s = PROXY.stack;
+			inst.__owned = [...(inst.__owned ?? []), ...s.splice(b.i)];
+			if (!b.n) s.push(inst);
 			mmNew(inst);
 			return inst;
 		},
 
-		disposeFn: function () {
-			// call the original dispose 
-			console.log("ignore user dispose " + this.constructor.name); //this.__dispose?.();
-		},
 		wrapF: function (cls, args) {
 			const b = PROXY.before(true),
 						inst = new cls(...args);
