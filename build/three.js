@@ -72,8 +72,10 @@
 		mmSet.clear();
 	}
 
-	exports.reset = mmReset;
-	exports.scan = mmScan; //////////////
+	const MM = {
+		reset: mmReset,
+		scan: mmScan
+	};
 	// TOKENS
 
 	const fr = new FinalizationRegistry(res => {
@@ -37238,6 +37240,7 @@
 	exports.LoopRepeat = LoopRepeat;
 	exports.LuminanceAlphaFormat = LuminanceAlphaFormat;
 	exports.LuminanceFormat = LuminanceFormat;
+	exports.MM = MM;
 	exports.MOUSE = MOUSE;
 	exports.Material = wrap_Material;
 	exports.MaterialLoader = MaterialLoader;
