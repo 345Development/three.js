@@ -984,4 +984,4 @@ const BuildDef = {
 	// },  
 }
 
-module.exports = { BuildDef };
+export { BuildDef };

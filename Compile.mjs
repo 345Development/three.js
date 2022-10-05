@@ -1,7 +1,6 @@
 import fs, { readFileSync, writeFileSync } from "fs";
 import path from "path";
-import defs from "./proxy/defs.js";
-const { BuildDef } = defs;
+import { BuildDef } from "./proxy/defs.js";
 
 // REMINDERS:
 // # to "compile" our 345 version of ThreeJS from original src
