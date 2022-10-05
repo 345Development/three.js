@@ -185,7 +185,7 @@ function disposeFinal(){
     try{
       this.dispose();
     }catch(e){
-      console.error(e,e.stack);
+      console.error(e);
     }
   }
   this.__disposeWas?.();
