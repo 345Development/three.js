@@ -39,7 +39,7 @@ function mmClean(){
   let c = 0;
   for(const o of mmSet){
     if(o.__mmc !== mmc) {
-      o.__dispose?.();
+      o.__disposeFinal?.();
       mmSet.delete(o);
       c++;
     }
@@ -72,7 +72,7 @@ function mmMarkQ(o){
 function mmReset(){
   // dispose of all
   for(const o of mmSet)
-    o.__dispose?.();
+    o.__disposeFinal?.();
   mmSet.clear();
 }
 
@@ -119,6 +119,12 @@ function disposeIgnore(){
   //console.log("ignore user dispose " + this.constructor.name);
 }
 
+function disposeFinal(){
+  if(this.dispose !== disposeIgnore)
+    this.dispose();
+  this.__disposeWas?.();
+}
+
 function initClass(cls,attrs) {
 	const pt = cls.prototype; // three js classes need to have properties added for token & ref
 
@@ -141,12 +147,13 @@ function initClass(cls,attrs) {
 		configurable: true
 	});
 	if (pt.dispose === disposeIgnore) return;
-	if (pt.__dispose) {
+	if (pt.__disposeWas) {
 		// we have already messed with dispose (from a base class)
-		pt.__dispose = pt.dispose;
-	} else if (pt.dispose) pt.__dispose = pt.dispose;
+		pt.__disposeWas = pt.dispose;
+	} else if (pt.dispose) pt.__disposeWas = pt.dispose;
 
 	pt.dispose = disposeIgnore;
+  pt.__disposeFinal = disposeFinal;
 }
 
 const PROXY = {
