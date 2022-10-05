@@ -14,6 +14,7 @@ function *mmScan(dbg){
   mmc++;
   // do the static scope objects (whatever is left on stack)
   PROXY.stack.forEach(o=>mmMark(o));
+  yield;
   for(const o of mmSet){
     // look for token (without creating)
     if(o.__token?.deref()){
@@ -22,10 +23,8 @@ function *mmScan(dbg){
     }
     yield;
   }
-  if(!dbg) {
-    mmGuard = false;
-    return;
-  }
+  mmGuard = false;
+  if(!dbg) return;
   // no check which things were not marked
   let marked=0, unmarked=0;
   for(const o of mmSet){
@@ -34,7 +33,6 @@ function *mmScan(dbg){
     else
       unmarked++;
   }
-  mmGuard = false;
   return {marked,unmarked};
 }
 
