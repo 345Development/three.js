@@ -76,7 +76,60 @@ function mmReset(){
   mmSet.clear();
 }
 
-const MM = { reset:mmReset, scan:mmScan, clean:mmClean, mmSet };
+/////////////// MEM DEBUG ////////////////
+
+function mmTree(){
+  // root items found from stack
+  const s = [];
+  PROXY.stack.forEach(o=>s.push(mmDebug(o)));
+
+  const t = [];
+  for(const o of mmSet){
+    // look for token (without creating)
+    if(o.__token?.deref()){
+      // held object
+      t.push(mmDebug(o));
+    }
+  }  
+  return {static:s, held:t};
+}
+
+function mmDebug(o){
+  const d = { item:o };
+  if(o.__owned && o.__owned.length>0){
+    d.owns = [];
+    o.__owned?.forEach(e=>d.owns.push(mmDebug(e)));
+  }
+  if(o.__attrs && o.__attrs.length>0){
+    d.attrs = {};
+    o.__attrs?.forEach(a=>d.attrs[a]=mmDebugA(o,a));
+  }
+  return d;
+}
+
+function mmDebugA(o,a){
+  if(a in o) return mmDebugQ(o[a]);
+}
+
+function mmDebugQ(o){
+  if(typeof o === 'object'){
+    // arrays must be iterated
+    if(Array.isArray(o)){
+      const d = [];
+      o.forEach(e=>d.push(mmDebugQ(e)));
+      return d;
+    } else if(o && '__mmc' in o) {
+      // needs to have an mmc (or def)
+      return mmDebug(o);
+    }
+  }
+}
+//////////////////////////////////////////
+
+
+
+
+const MM = { reset:mmReset, scan:mmScan, clean:mmClean, tree:mmTree, mmSet };
 
 export { MM };
 
