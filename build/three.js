@@ -200,7 +200,15 @@
 	}
 
 	function disposeFinal() {
-		if (this.dispose !== disposeIgnore) this.dispose();
+		if (this.dispose !== disposeIgnore) {
+			// user code executed here... unsafe so try/catch
+			try {
+				this.dispose();
+			} catch (e) {
+				console.error(e, e.stack);
+			}
+		}
+
 		this.__disposeWas?.();
 	}
 
