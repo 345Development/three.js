@@ -9,7 +9,7 @@ function mmNew(inst){
   mmSet.add(inst);
 }
 
-function mmScan(){
+function *mmScan(dbg){
   mmGuard = true; // for when we make this fn a generator
   mmc++;
   // do the static scope objects (whatever is left on stack)
@@ -20,6 +20,11 @@ function mmScan(){
       // held object
       mmMark(o);
     }
+    yield;
+  }
+  if(!dbg) {
+    mmGuard = false;
+    return;
   }
   // no check which things were not marked
   let marked=0, unmarked=0;
@@ -33,7 +38,7 @@ function mmScan(){
   return {marked,unmarked};
 }
 
-function mmClean(){
+function *mmClean(){
   if(mmGuard) return -1;
   // dispose on anything not up to latest mark
   let c = 0;
@@ -43,6 +48,7 @@ function mmClean(){
       mmSet.delete(o);
       c++;
     }
+    yield;
   }  
   return c;
 }
