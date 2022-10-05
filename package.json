@@ -1,6 +1,6 @@
 {
-  "name": "three",
-  "version": "0.145.0",
+  "name": "@345dev/three",
+  "version": "0.145.0-1",
   "description": "JavaScript 3D library",
   "type": "module",
   "main": "./build/three.js",
@@ -74,9 +74,9 @@
       "GPUBufferUsage": "readonly",
       "GPUTextureUsage": "readonly",
       "QUnit": "readonly",
-      "Ammo":"readonly",
-      "XRRigidTransform":"readonly",
-      "XRMediaBinding":"readonly"
+      "Ammo": "readonly",
+      "XRRigidTransform": "readonly",
+      "XRMediaBinding": "readonly"
     },
     "rules": {
       "no-throw-literal": [
