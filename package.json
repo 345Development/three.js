@@ -3,6 +3,7 @@
   "version": "0.133.1-6",
   "description": "JavaScript 3D library",
   "main": "build/three.js",
+  "types": "types/index.d.ts",
   "module": "build/three.module.js",
   "repository": {
     "type": "git",
@@ -13,6 +14,11 @@
     "build/three.js",
     "build/three.min.js",
     "build/three.module.js",
+    "types/examples",
+    "types/src",
+    "types/test",
+    "types/index.d.ts",
+    "types/OTHER_FILES.txt",
     "examples/js",
     "examples/jsm",
     "examples/fonts",
@@ -24,7 +30,8 @@
   "directories": {
     "doc": "docs",
     "example": "examples",
-    "test": "test"
+    "test": "test",
+    "types": "types"
   },
   "eslintConfig": {
     "root": true,
