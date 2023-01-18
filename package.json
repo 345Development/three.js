@@ -1,13 +1,13 @@
 {
   "name": "@345dev/three",
-  "version": "0.133.1-6",
+  "version": "0.133.1-7",
   "description": "JavaScript 3D library",
   "main": "build/three.js",
   "types": "types/index.d.ts",
   "module": "build/three.module.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/mrdoob/three.js"
+    "url": "https://github.com/345Development/three.js"
   },
   "sideEffects": false,
   "files": [
