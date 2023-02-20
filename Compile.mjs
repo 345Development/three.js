@@ -4,14 +4,19 @@ import defs from "./proxy/defs.js";
 const { BuildDef } = defs;
 
 // REMINDERS:
+// npm install
+//
 // # to "compile" our 345 version of ThreeJS from original src
 // node Compile.mjs
 //
 // # to build into module/minified etc
 // npm run build
 //
+// # login if needed
+// npm login
 //
-// npm install
+// # publish
+// npm publish --access public
 
 var count = 1000000;
 var walk = function (dir, done) {
