@@ -190,13 +190,13 @@ function disposeFinal() {
 function initClass(cls, attrs) {
 	const pt = cls.prototype; // three js classes need to have properties added for token & ref
 
-	// // make a static property with the original class
-	// Object.defineProperty(cls, "__3class", {
-	// 	value: cls,
-	// 	writable: false,
-	// 	enumerable: true,
-	// 	configurable: false,
-	// });
+	// make a static property with the original class
+	Object.defineProperty(cls, "__3class", {
+		value: cls,
+		writable: false,
+		enumerable: true,
+		configurable: false,
+	});
 
 	if (Array.isArray(attrs)) {
 		// add def to prototype
@@ -241,7 +241,7 @@ const PROXY = {
 		if (!b.n) s.push(inst);
 		mmNew(inst);
 		// extensible... after construction method can be implemented
-		//inst.constructor.__after?.(inst);
+		inst.constructor.__after?.(inst);
 		return inst;
 	},
 	wrapF: function (cls, args) {
