@@ -6,148 +6,147 @@
 ///////////////////////////////////////////////////////////////////////
 // MEMORY MANAGEMENT
 
-let mmc = 0, mmGuard = false;
+let mmc = 0,
+	mmGuard = false;
 const mmSet = new Set();
 
-function mmNew(inst){
-  inst.__mmc = mmc;
-  mmSet.add(inst);
+function mmNew(inst) {
+	inst.__mmc = mmc;
+	mmSet.add(inst);
 }
 
-function *mmScan(dbg){
-  mmGuard = true; // for when we make this fn a generator
-  mmc++;
-  // do the static scope objects (whatever is left on stack)
-  PROXY.stack.forEach(o=>mmMark(o));
-  yield;
-  for(const o of mmSet){
-    // look for token (without creating)
-    if(o.__token?.deref()){
-      // held object
-      mmMark(o);
-    }
-    yield;
-  }
-  mmGuard = false;
-  if(!dbg) return;
-  // no check which things were not marked
-  let marked=0, unmarked=0;
-  for(const o of mmSet){
-    if(o.__mmc === mmc)
-      marked++;
-    else
-      unmarked++;
-  }
-  return {marked,unmarked};
+function* mmScan(dbg) {
+	mmGuard = true; // for when we make this fn a generator
+	mmc++;
+	// do the static scope objects (whatever is left on stack)
+	PROXY.stack.forEach((o) => mmMark(o));
+	yield;
+	for (const o of mmSet) {
+		// look for token (without creating)
+		if (o.__token?.deref()) {
+			// held object
+			mmMark(o);
+		}
+		yield;
+	}
+	mmGuard = false;
+	if (!dbg) return;
+	// no check which things were not marked
+	let marked = 0,
+		unmarked = 0;
+	for (const o of mmSet) {
+		if (o.__mmc === mmc) marked++;
+		else unmarked++;
+	}
+	return { marked, unmarked };
 }
 
-function *mmClean(){
-  if(mmGuard) return -1;
-  // dispose on anything not up to latest mark
-  let c = 0;
-  for(const o of mmSet){
-    if(o.__mmc !== mmc) {
-      o.__disposeFinal?.();
-      mmSet.delete(o);
-      c++;
-    }
-    yield;
-  }  
-  return c;
+function* mmClean() {
+	if (mmGuard) return -1;
+	// dispose on anything not up to latest mark
+	let c = 0;
+	for (const o of mmSet) {
+		if (o.__mmc !== mmc) {
+			o.__disposeFinal?.();
+			mmSet.delete(o);
+			c++;
+		}
+		yield;
+	}
+	return c;
 }
 
-function mmMark(o){
-  o.__mmc = mmc;
-  o.__owned?.forEach(e=>mmMark(e));
-  o.__attrs?.forEach(a=>mmMarkA(o,a));
+function mmMark(o) {
+	o.__mmc = mmc;
+	o.__owned?.forEach((e) => mmMark(e));
+	o.__attrs?.forEach((a) => mmMarkA(o, a));
 }
 
-function mmMarkA(o,a){
-  if(a in o) mmMarkQ(o[a]);
+function mmMarkA(o, a) {
+	if (a in o) mmMarkQ(o[a]);
 }
 
-function mmMarkQ(o){
-  if(typeof o === 'object'){
-    // arrays must be iterated
-    if(Array.isArray(o)){
-      o.forEach(e=>mmMarkQ(e));
-    } else if(o && '__mmc' in o) {
-      // needs to have an mmc (or def)
-      mmMark(o);
-    }
-  }
+function mmMarkQ(o) {
+	if (typeof o === "object") {
+		// arrays must be iterated
+		if (Array.isArray(o)) {
+			o.forEach((e) => mmMarkQ(e));
+		} else if (o && "__mmc" in o) {
+			// needs to have an mmc (or def)
+			mmMark(o);
+		}
+	}
 }
 
-function mmReset(){
-  // dispose of all
-  for(const o of mmSet)
-    o.__disposeFinal?.();
-  mmSet.clear();
+function mmReset() {
+	// dispose of all
+	for (const o of mmSet) o.__disposeFinal?.();
+	mmSet.clear();
 }
 
 /////////////// MEM DEBUG ////////////////
 
-function mmTree(){
-  // root items found from stack
-  const s = [];
-  PROXY.stack.forEach(o=>s.push(mmDebug(o)));
+function mmTree() {
+	// root items found from stack
+	const s = [];
+	PROXY.stack.forEach((o) => s.push(mmDebug(o)));
 
-  const t = [];
-  for(const o of mmSet){
-    // look for token (without creating)
-    if(o.__token?.deref()){
-      // held object
-      t.push(mmDebug(o));
-    }
-  }  
-  return {static:s, held:t};
+	const t = [];
+	for (const o of mmSet) {
+		// look for token (without creating)
+		if (o.__token?.deref()) {
+			// held object
+			t.push(mmDebug(o));
+		}
+	}
+	return { static: s, held: t };
 }
 
-function mmDebug(o){
-  const d = { item:o };
-  if(o.__owned && o.__owned.length>0){
-    d.owns = [];
-    o.__owned?.forEach(e=>d.owns.push(mmDebug(e)));
-  }
-  if(o.__attrs && o.__attrs.length>0){
-    d.attrs = {};
-    o.__attrs?.forEach(a=>d.attrs[a]=mmDebugA(o,a));
-  }
-  return d;
+function mmDebug(o) {
+	const d = { item: o };
+	if (o.__owned && o.__owned.length > 0) {
+		d.owns = [];
+		o.__owned?.forEach((e) => d.owns.push(mmDebug(e)));
+	}
+	if (o.__attrs && o.__attrs.length > 0) {
+		d.attrs = {};
+		o.__attrs?.forEach((a) => (d.attrs[a] = mmDebugA(o, a)));
+	}
+	return d;
 }
 
-function mmDebugA(o,a){
-  if(a in o) return mmDebugQ(o[a]);
+function mmDebugA(o, a) {
+	if (a in o) return mmDebugQ(o[a]);
 }
 
-function mmDebugQ(o){
-  if(typeof o === 'object'){
-    // arrays must be iterated
-    if(Array.isArray(o)){
-      const d = [];
-      o.forEach(e=>d.push(mmDebugQ(e)));
-      return d;
-    } else if(o && '__mmc' in o) {
-      // needs to have an mmc (or def)
-      return mmDebug(o);
-    }
-  }
+function mmDebugQ(o) {
+	if (typeof o === "object") {
+		// arrays must be iterated
+		if (Array.isArray(o)) {
+			const d = [];
+			o.forEach((e) => d.push(mmDebugQ(e)));
+			return d;
+		} else if (o && "__mmc" in o) {
+			// needs to have an mmc (or def)
+			return mmDebug(o);
+		}
+	}
 }
 //////////////////////////////////////////
 
-
-
-
-const MM = { reset:mmReset, scan:mmScan, clean:mmClean, tree:mmTree, mmSet };
-
-
+const MM = {
+	reset: mmReset,
+	scan: mmScan,
+	clean: mmClean,
+	tree: mmTree,
+	mmSet,
+};
 
 //////////////
 // TOKENS
 
-const fr = new FinalizationRegistry(res => {
-  if(PROXY.debug)
-    console.log("finalise on", res.constructor.name);
+const fr = new FinalizationRegistry((res) => {
+	if (PROXY.debug) console.log("finalise on", res.constructor.name);
 	//res?.dispose?.(true);
 });
 
@@ -163,7 +162,7 @@ class Token {
 	constructor(inst) {
 		inst.__token = new WeakRef(this);
 		this.__ref = inst;
-		fr.register(this, inst);    
+		fr.register(this, inst);
 	}
 
 	static create(inst) {
@@ -175,42 +174,50 @@ class Token {
 //////////////////
 // PROXY & INIT
 
-function disposeIgnore(){
-  //console.log("ignore user dispose " + this.constructor.name);
+function disposeIgnore() {
+	//console.log("ignore user dispose " + this.constructor.name);
 }
 
-function disposeFinal(){
-  if(this.dispose !== disposeIgnore){
-    // user code executed here... unsafe so try/catch
-    try{
-      this.dispose();
-    }catch(e){
-      console.error(e);
-    }
-  }
-  this.__disposeWas?.();
+function disposeFinal() {
+	if (this.dispose !== disposeIgnore) {
+		// user code executed here... unsafe so try/catch
+		try {
+			this.dispose();
+		} catch (e) {
+			console.error(e);
+		}
+	}
+	this.__disposeWas?.();
 }
 
-function initClass(cls,attrs) {
+function initClass(cls, attrs) {
 	const pt = cls.prototype; // three js classes need to have properties added for token & ref
 
-	if(Array.isArray(attrs)){
+	// make a static property with the original class
+	Object.defineProperty(cls, "__3class", {
+		value: cls,
+		writable: false,
+		enumerable: true,
+		configurable: false,
+	});
+
+	if (Array.isArray(attrs)) {
 		// add def to prototype
-		Object.defineProperty(pt, "__attrs", {value: attrs});
+		Object.defineProperty(pt, "__attrs", { value: attrs });
 	}
 	Object.defineProperty(pt, "token", {
 		get: function () {
 			return this.__token?.deref() ?? Token.create(this);
 		},
 		enumerable: true,
-		configurable: true
+		configurable: true,
 	});
 	Object.defineProperty(pt, "ref", {
 		get: function () {
 			return this;
 		},
 		enumerable: true,
-		configurable: true
+		configurable: true,
 	});
 	if (pt.dispose === disposeIgnore) return;
 	if (pt.__disposeWas) {
@@ -219,52 +226,50 @@ function initClass(cls,attrs) {
 	} else if (pt.dispose) pt.__disposeWas = pt.dispose;
 
 	pt.dispose = disposeIgnore;
-  pt.__disposeFinal = disposeFinal;
+	pt.__disposeFinal = disposeFinal;
 }
 
 const PROXY = {
-  debug: false,
+	debug: false,
 	stack: [],
-  before(n=false){
-    const s=PROXY.stack;
-    //if(n) s.splice(0);  // clear 
-    return {n,i:s.length};
-  },
-  after(b,inst){
-    // take above i off stack into owned
-    const s=PROXY.stack;
-    inst.__owned = [...(inst.__owned??[]),...(s.splice(b.i))];
-    if(!b.n)
-      s.push(inst); 
-    mmNew(inst);
-    return inst;
-  },
-	wrapF: function (cls, args) {
-    const b=PROXY.before(true),
-      inst = new cls(...args);
-    if(PROXY.debug)
-      console.log("user create " + cls.name);      
-    return PROXY.after(b,inst);
+	before(n = false) {
+		const s = PROXY.stack;
+		//if(n) s.splice(0);  // clear
+		return { n, i: s.length };
 	},
-  wrapC: function (cb){
-    const b=PROXY.before(true),
-      inst = cb();
-    if(PROXY.debug)
-      console.log("user create " + inst.constructor.name);
-    return PROXY.after(b,inst);    
-  },
+	after(b, inst) {
+		// take above i off stack into owned
+		const s = PROXY.stack;
+		inst.__owned = [...(inst.__owned ?? []), ...s.splice(b.i)];
+		if (!b.n) s.push(inst);
+		mmNew(inst);
+		// extensible... after construction method can be implemented
+		inst.constructor.__after?.(inst);
+		return inst;
+	},
+	wrapF: function (cls, args) {
+		const b = PROXY.before(true),
+			inst = new cls(...args);
+		if (PROXY.debug) console.log("user create " + cls.name);
+		return PROXY.after(b, inst);
+	},
+	wrapC: function (cb) {
+		const b = PROXY.before(true),
+			inst = cb();
+		if (PROXY.debug) console.log("user create " + inst.constructor.name);
+		return PROXY.after(b, inst);
+	},
 	internal: function (info) {
 		var args = Array.prototype.slice.call(arguments, 1);
 		const name = info.c.name;
-    const b=PROXY.before(false),
-      inst = new info.c(...args);
-    if(PROXY.debug)      
-      console.log("internal create " + name);      
-    return PROXY.after(b,inst);
+		const b = PROXY.before(false),
+			inst = new info.c(...args);
+		if (PROXY.debug) console.log("internal create " + name);
+		return PROXY.after(b, inst);
 	},
-	init: function (cls,attrs) {
-		initClass(cls,attrs);
-	}
+	init: function (cls, attrs) {
+		initClass(cls, attrs);
+	},
 };
 
 const REVISION = '133';
@@ -796,29 +801,29 @@ function setQuaternionFromProperEuler( q, a, b, c, order ) {
 }
 
 var MathUtils = /*#__PURE__*/Object.freeze({
-  __proto__: null,
-  DEG2RAD: DEG2RAD,
-  RAD2DEG: RAD2DEG,
-  generateUUID: generateUUID,
-  clamp: clamp,
-  euclideanModulo: euclideanModulo,
-  mapLinear: mapLinear,
-  inverseLerp: inverseLerp,
-  lerp: lerp,
-  damp: damp,
-  pingpong: pingpong,
-  smoothstep: smoothstep,
-  smootherstep: smootherstep,
-  randInt: randInt,
-  randFloat: randFloat,
-  randFloatSpread: randFloatSpread,
-  seededRandom: seededRandom,
-  degToRad: degToRad,
-  radToDeg: radToDeg,
-  isPowerOfTwo: isPowerOfTwo,
-  ceilPowerOfTwo: ceilPowerOfTwo,
-  floorPowerOfTwo: floorPowerOfTwo,
-  setQuaternionFromProperEuler: setQuaternionFromProperEuler
+	__proto__: null,
+	DEG2RAD: DEG2RAD,
+	RAD2DEG: RAD2DEG,
+	generateUUID: generateUUID,
+	clamp: clamp,
+	euclideanModulo: euclideanModulo,
+	mapLinear: mapLinear,
+	inverseLerp: inverseLerp,
+	lerp: lerp,
+	damp: damp,
+	pingpong: pingpong,
+	smoothstep: smoothstep,
+	smootherstep: smootherstep,
+	randInt: randInt,
+	randFloat: randFloat,
+	randFloatSpread: randFloatSpread,
+	seededRandom: seededRandom,
+	degToRad: degToRad,
+	radToDeg: radToDeg,
+	isPowerOfTwo: isPowerOfTwo,
+	ceilPowerOfTwo: ceilPowerOfTwo,
+	floorPowerOfTwo: floorPowerOfTwo,
+	setQuaternionFromProperEuler: setQuaternionFromProperEuler
 });
 
 class Vector2 {
@@ -32522,17 +32527,17 @@ class SplineCurve extends Curve {
 SplineCurve.prototype.isSplineCurve = true;
 
 var Curves = /*#__PURE__*/Object.freeze({
-  __proto__: null,
-  ArcCurve: ArcCurve,
-  CatmullRomCurve3: CatmullRomCurve3,
-  CubicBezierCurve: CubicBezierCurve,
-  CubicBezierCurve3: CubicBezierCurve3,
-  EllipseCurve: EllipseCurve,
-  LineCurve: LineCurve,
-  LineCurve3: LineCurve3,
-  QuadraticBezierCurve: QuadraticBezierCurve,
-  QuadraticBezierCurve3: QuadraticBezierCurve3,
-  SplineCurve: SplineCurve
+	__proto__: null,
+	ArcCurve: ArcCurve,
+	CatmullRomCurve3: CatmullRomCurve3,
+	CubicBezierCurve: CubicBezierCurve,
+	CubicBezierCurve3: CubicBezierCurve3,
+	EllipseCurve: EllipseCurve,
+	LineCurve: LineCurve,
+	LineCurve3: LineCurve3,
+	QuadraticBezierCurve: QuadraticBezierCurve,
+	QuadraticBezierCurve3: QuadraticBezierCurve3,
+	SplineCurve: SplineCurve
 });
 
 /**************************************************************
@@ -36021,65 +36026,65 @@ PROXY.init(WireframeGeometry,[]);
 class wrap_WireframeGeometry extends WireframeGeometry{ constructor(){ PROXY.wrapC(()=>super(...arguments)); }}
 
 var Geometries = /*#__PURE__*/Object.freeze({
-  __proto__: null,
-  BoxGeometry: BoxGeometry,
-  BoxBufferGeometry: BoxGeometry,
-  wrap_BoxGeometry: wrap_BoxGeometry,
-  CircleGeometry: CircleGeometry,
-  CircleBufferGeometry: CircleGeometry,
-  wrap_CircleGeometry: wrap_CircleGeometry,
-  ConeGeometry: ConeGeometry,
-  ConeBufferGeometry: ConeGeometry,
-  wrap_ConeGeometry: wrap_ConeGeometry,
-  CylinderGeometry: CylinderGeometry,
-  CylinderBufferGeometry: CylinderGeometry,
-  wrap_CylinderGeometry: wrap_CylinderGeometry,
-  DodecahedronGeometry: DodecahedronGeometry,
-  DodecahedronBufferGeometry: DodecahedronGeometry,
-  wrap_DodecahedronGeometry: wrap_DodecahedronGeometry,
-  EdgesGeometry: EdgesGeometry,
-  wrap_EdgesGeometry: wrap_EdgesGeometry,
-  ExtrudeGeometry: ExtrudeGeometry,
-  ExtrudeBufferGeometry: ExtrudeGeometry,
-  wrap_ExtrudeGeometry: wrap_ExtrudeGeometry,
-  IcosahedronGeometry: IcosahedronGeometry,
-  IcosahedronBufferGeometry: IcosahedronGeometry,
-  wrap_IcosahedronGeometry: wrap_IcosahedronGeometry,
-  LatheGeometry: LatheGeometry,
-  LatheBufferGeometry: LatheGeometry,
-  wrap_LatheGeometry: wrap_LatheGeometry,
-  OctahedronGeometry: OctahedronGeometry,
-  OctahedronBufferGeometry: OctahedronGeometry,
-  wrap_OctahedronGeometry: wrap_OctahedronGeometry,
-  PlaneGeometry: PlaneGeometry,
-  PlaneBufferGeometry: PlaneGeometry,
-  wrap_PlaneGeometry: wrap_PlaneGeometry,
-  PolyhedronGeometry: PolyhedronGeometry,
-  PolyhedronBufferGeometry: PolyhedronGeometry,
-  wrap_PolyhedronGeometry: wrap_PolyhedronGeometry,
-  RingGeometry: RingGeometry,
-  RingBufferGeometry: RingGeometry,
-  wrap_RingGeometry: wrap_RingGeometry,
-  ShapeGeometry: ShapeGeometry,
-  ShapeBufferGeometry: ShapeGeometry,
-  wrap_ShapeGeometry: wrap_ShapeGeometry,
-  SphereGeometry: SphereGeometry,
-  SphereBufferGeometry: SphereGeometry,
-  wrap_SphereGeometry: wrap_SphereGeometry,
-  TetrahedronGeometry: TetrahedronGeometry,
-  TetrahedronBufferGeometry: TetrahedronGeometry,
-  wrap_TetrahedronGeometry: wrap_TetrahedronGeometry,
-  TorusGeometry: TorusGeometry,
-  TorusBufferGeometry: TorusGeometry,
-  wrap_TorusGeometry: wrap_TorusGeometry,
-  TorusKnotGeometry: TorusKnotGeometry,
-  TorusKnotBufferGeometry: TorusKnotGeometry,
-  wrap_TorusKnotGeometry: wrap_TorusKnotGeometry,
-  TubeGeometry: TubeGeometry,
-  TubeBufferGeometry: TubeGeometry,
-  wrap_TubeGeometry: wrap_TubeGeometry,
-  WireframeGeometry: WireframeGeometry,
-  wrap_WireframeGeometry: wrap_WireframeGeometry
+	__proto__: null,
+	BoxGeometry: BoxGeometry,
+	BoxBufferGeometry: BoxGeometry,
+	wrap_BoxGeometry: wrap_BoxGeometry,
+	CircleGeometry: CircleGeometry,
+	CircleBufferGeometry: CircleGeometry,
+	wrap_CircleGeometry: wrap_CircleGeometry,
+	ConeGeometry: ConeGeometry,
+	ConeBufferGeometry: ConeGeometry,
+	wrap_ConeGeometry: wrap_ConeGeometry,
+	CylinderGeometry: CylinderGeometry,
+	CylinderBufferGeometry: CylinderGeometry,
+	wrap_CylinderGeometry: wrap_CylinderGeometry,
+	DodecahedronGeometry: DodecahedronGeometry,
+	DodecahedronBufferGeometry: DodecahedronGeometry,
+	wrap_DodecahedronGeometry: wrap_DodecahedronGeometry,
+	EdgesGeometry: EdgesGeometry,
+	wrap_EdgesGeometry: wrap_EdgesGeometry,
+	ExtrudeGeometry: ExtrudeGeometry,
+	ExtrudeBufferGeometry: ExtrudeGeometry,
+	wrap_ExtrudeGeometry: wrap_ExtrudeGeometry,
+	IcosahedronGeometry: IcosahedronGeometry,
+	IcosahedronBufferGeometry: IcosahedronGeometry,
+	wrap_IcosahedronGeometry: wrap_IcosahedronGeometry,
+	LatheGeometry: LatheGeometry,
+	LatheBufferGeometry: LatheGeometry,
+	wrap_LatheGeometry: wrap_LatheGeometry,
+	OctahedronGeometry: OctahedronGeometry,
+	OctahedronBufferGeometry: OctahedronGeometry,
+	wrap_OctahedronGeometry: wrap_OctahedronGeometry,
+	PlaneGeometry: PlaneGeometry,
+	PlaneBufferGeometry: PlaneGeometry,
+	wrap_PlaneGeometry: wrap_PlaneGeometry,
+	PolyhedronGeometry: PolyhedronGeometry,
+	PolyhedronBufferGeometry: PolyhedronGeometry,
+	wrap_PolyhedronGeometry: wrap_PolyhedronGeometry,
+	RingGeometry: RingGeometry,
+	RingBufferGeometry: RingGeometry,
+	wrap_RingGeometry: wrap_RingGeometry,
+	ShapeGeometry: ShapeGeometry,
+	ShapeBufferGeometry: ShapeGeometry,
+	wrap_ShapeGeometry: wrap_ShapeGeometry,
+	SphereGeometry: SphereGeometry,
+	SphereBufferGeometry: SphereGeometry,
+	wrap_SphereGeometry: wrap_SphereGeometry,
+	TetrahedronGeometry: TetrahedronGeometry,
+	TetrahedronBufferGeometry: TetrahedronGeometry,
+	wrap_TetrahedronGeometry: wrap_TetrahedronGeometry,
+	TorusGeometry: TorusGeometry,
+	TorusBufferGeometry: TorusGeometry,
+	wrap_TorusGeometry: wrap_TorusGeometry,
+	TorusKnotGeometry: TorusKnotGeometry,
+	TorusKnotBufferGeometry: TorusKnotGeometry,
+	wrap_TorusKnotGeometry: wrap_TorusKnotGeometry,
+	TubeGeometry: TubeGeometry,
+	TubeBufferGeometry: TubeGeometry,
+	wrap_TubeGeometry: wrap_TubeGeometry,
+	WireframeGeometry: WireframeGeometry,
+	wrap_WireframeGeometry: wrap_WireframeGeometry
 });
 
 // #PROXY1.0.0 Classes:ShadowMaterial Uses:
@@ -37145,25 +37150,25 @@ PROXY.init(LineDashedMaterial,[]);
 class wrap_LineDashedMaterial extends LineDashedMaterial{ constructor(){ PROXY.wrapC(()=>super(...arguments)); }}
 
 var Materials = /*#__PURE__*/Object.freeze({
-  __proto__: null,
-  ShadowMaterial: ShadowMaterial,
-  SpriteMaterial: SpriteMaterial,
-  RawShaderMaterial: RawShaderMaterial,
-  ShaderMaterial: ShaderMaterial,
-  PointsMaterial: PointsMaterial,
-  MeshPhysicalMaterial: MeshPhysicalMaterial,
-  MeshStandardMaterial: MeshStandardMaterial,
-  MeshPhongMaterial: MeshPhongMaterial,
-  MeshToonMaterial: MeshToonMaterial,
-  MeshNormalMaterial: MeshNormalMaterial,
-  MeshLambertMaterial: MeshLambertMaterial,
-  MeshDepthMaterial: MeshDepthMaterial,
-  MeshDistanceMaterial: MeshDistanceMaterial,
-  MeshBasicMaterial: MeshBasicMaterial,
-  MeshMatcapMaterial: MeshMatcapMaterial,
-  LineDashedMaterial: LineDashedMaterial,
-  LineBasicMaterial: LineBasicMaterial,
-  Material: Material
+	__proto__: null,
+	ShadowMaterial: ShadowMaterial,
+	SpriteMaterial: SpriteMaterial,
+	RawShaderMaterial: RawShaderMaterial,
+	ShaderMaterial: ShaderMaterial,
+	PointsMaterial: PointsMaterial,
+	MeshPhysicalMaterial: MeshPhysicalMaterial,
+	MeshStandardMaterial: MeshStandardMaterial,
+	MeshPhongMaterial: MeshPhongMaterial,
+	MeshToonMaterial: MeshToonMaterial,
+	MeshNormalMaterial: MeshNormalMaterial,
+	MeshLambertMaterial: MeshLambertMaterial,
+	MeshDepthMaterial: MeshDepthMaterial,
+	MeshDistanceMaterial: MeshDistanceMaterial,
+	MeshBasicMaterial: MeshBasicMaterial,
+	MeshMatcapMaterial: MeshMatcapMaterial,
+	LineDashedMaterial: LineDashedMaterial,
+	LineBasicMaterial: LineBasicMaterial,
+	Material: Material
 });
 
 const AnimationUtils = {

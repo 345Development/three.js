@@ -83,11 +83,11 @@
 	}
 
 	function mmMarkQ(o) {
-		if (typeof o === 'object') {
+		if (typeof o === "object") {
 			// arrays must be iterated
 			if (Array.isArray(o)) {
 				o.forEach(e => mmMarkQ(e));
-			} else if (o && '__mmc' in o) {
+			} else if (o && "__mmc" in o) {
 				// needs to have an mmc (or def)
 				mmMark(o);
 			}
@@ -145,13 +145,13 @@
 	}
 
 	function mmDebugQ(o) {
-		if (typeof o === 'object') {
+		if (typeof o === "object") {
 			// arrays must be iterated
 			if (Array.isArray(o)) {
 				const d = [];
 				o.forEach(e => d.push(mmDebugQ(e)));
 				return d;
-			} else if (o && '__mmc' in o) {
+			} else if (o && "__mmc" in o) {
 				// needs to have an mmc (or def)
 				return mmDebug(o);
 			}
@@ -214,6 +214,14 @@
 
 	function initClass(cls, attrs) {
 		const pt = cls.prototype; // three js classes need to have properties added for token & ref
+		// make a static property with the original class
+
+		Object.defineProperty(cls, "__3class", {
+			value: cls,
+			writable: false,
+			enumerable: true,
+			configurable: false
+		});
 
 		if (Array.isArray(attrs)) {
 			// add def to prototype
@@ -252,7 +260,7 @@
 		stack: [],
 
 		before(n = false) {
-			const s = PROXY.stack; //if(n) s.splice(0);	// clear 
+			const s = PROXY.stack; //if(n) s.splice(0);	// clear
 
 			return {
 				n,
@@ -265,7 +273,9 @@
 			const s = PROXY.stack;
 			inst.__owned = [...(inst.__owned ?? []), ...s.splice(b.i)];
 			if (!b.n) s.push(inst);
-			mmNew(inst);
+			mmNew(inst); // extensible... after construction method can be implemented
+
+			inst.constructor.__after?.(inst);
 			return inst;
 		},
 
