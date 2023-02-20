@@ -40,19 +40,19 @@ var walk = function (dir, done) {
 };
 
 const WriteFiles = true;
-const HomePath = "C:/WORK/Projects/VergeVT/Test/345-ThreeJS/three.js/";
+const HomePath = "C:/WORK/Projects/345/VQ/345-ThreeJS/";
 const SrcPath = HomePath + "src/";
 const SystemFilePath = HomePath + "proxy/system.js";
 const ImportFilePathRel = "src/345/system.js";
-const BuildFile = SrcPath+"Three.js";
+const BuildFile = SrcPath + "Three.js";
 //const CreationPrefix = "proxy_";
 const FileHeader = "// #PROXY1.0.0 ";
 const EOL = "\r\n";
 
 // copy the system file across
-if(WriteFiles){
+if (WriteFiles) {
   const sysStr = readFileSync(SystemFilePath);
-  writeFileSync(HomePath + ImportFilePathRel,sysStr);
+  writeFileSync(HomePath + ImportFilePathRel, sysStr);
 }
 
 //const WrapFunc = "ProxyCreate";
@@ -104,9 +104,9 @@ const fileRules = {
       return loc ? null : `{c:${cls},w:'STATIC'}`;
     },
   },
-  "Mesh.js":{
+  "Mesh.js": {
     newContext: (cls, idx, loc) => {
-      // Mesh instatiates in constructor args... 
+      // Mesh instatiates in constructor args...
       // need to leave out 'this'
       return idx < 1500 ? `{c:${cls},w:'${loc}'}` : null;
     },
@@ -115,17 +115,17 @@ const fileRules = {
     newContext: (cls, idx, loc) => {
       return loc ? null : `{c:${cls},w:'STATIC'}`;
     },
-  },  
-  "Line.js":{
+  },
+  "Line.js": {
     newContext: (cls, idx, loc) => {
-      // Mesh instatiates in constructor args... 
+      // Mesh instatiates in constructor args...
       // need to leave out 'this'
       return idx < 800 ? `{c:${cls},w:'${loc}'}` : null;
     },
   },
-  "Points.js":{
+  "Points.js": {
     newContext: (cls, idx, loc) => {
-      // Mesh instatiates in constructor args... 
+      // Mesh instatiates in constructor args...
       // need to leave out 'this'
       return idx < 700 ? `{c:${cls},w:'${loc}'}` : null;
     },
@@ -134,7 +134,7 @@ const fileRules = {
     newContext: (cls, idx, loc) => {
       return loc ? null : `{c:${cls},w:'STATIC'}`;
     },
-  },  
+  },
   "PMREMGenerator.js": {
     newContext: (cls, idx, loc) => {
       return loc ? null : `{c:${cls},w:'STATIC'}`;
@@ -152,9 +152,9 @@ const fileRules = {
 //     code:''
 //   };
 // }
-function getAllAttrs(def){
+function getAllAttrs(def) {
   const a = [];
-  while(def?.attrs){
+  while (def?.attrs) {
     a.push(...def.attrs);
     def = BuildDef[def.extends];
   }
@@ -163,12 +163,12 @@ function getAllAttrs(def){
 
 // note; files seem to encode } with 7E or 7D
 const ExportRegex = /[\W\s]?export\s*\{\s*(\w+)\s*[\x7D\x7E]/g;
-function FindExport(str, forName){
+function FindExport(str, forName) {
   let matches = str.matchAll(ExportRegex);
-  for(const m of matches){
-    if(m[1]===forName) {
+  for (const m of matches) {
+    if (m[1] === forName) {
       const os = m[0].indexOf("export");
-      return {index:m.index+os,length:m[0].length-os};
+      return { index: m.index + os, length: m[0].length - os };
     }
   }
   return null;
@@ -179,14 +179,14 @@ function BlankComments(str) {
   const wasLen = str.length;
   let updates = [];
   let matches = str.matchAll(CommentRegex);
-  for(const m of matches){
+  for (const m of matches) {
     if (!m[1]) m[1] = "";
 
     const e = {
       index: m.index + m[1].length,
       comment: m[0].substring(m[1].length),
     };
-    if (e.comment.length >= 4) updates.push(e);    
+    if (e.comment.length >= 4) updates.push(e);
   }
 
   updates.forEach((u) => {
@@ -206,7 +206,7 @@ function findClasses(str) {
   str = BlankComments(str);
 
   let matches = str.matchAll(ClassRegex);
-  for(const m of matches){
+  for (const m of matches) {
     const found = m[2];
     //s.add(found);
     s.push({ index: m.index + m[0].indexOf(found), class: found });
@@ -223,11 +223,11 @@ function pickClass(found, beforeIdx) {
 
 const stats = {},
   fileStats = [],
-  exports = new Map();    // map => filePath
+  exports = new Map(); // map => filePath
 
 // aggregate defs by file
 const FileDefs = {};
-for(const [name,def] of Object.entries(BuildDef)){
+for (const [name, def] of Object.entries(BuildDef)) {
   const fn = def.file.toLowerCase(),
     a = FileDefs[fn] ?? {};
   def.name = name;
@@ -243,7 +243,7 @@ walk(SrcPath, function (err, results) {
   //console.log("hello", results);
 
   results.forEach((file) => {
-    if (!file.endsWith(".js")||file.indexOf("system.js")>=0) {
+    if (!file.endsWith(".js") || file.indexOf("system.js") >= 0) {
       console.log("IGNORE:", file);
       return;
     }
@@ -266,19 +266,19 @@ walk(SrcPath, function (err, results) {
     //console.log("file: " + file + " len: " + str.length);
 
     // already processed; we can redo ; must revert
-    if (str.startsWith(FileHeader)) return; 
+    if (str.startsWith(FileHeader)) return;
 
     // get the build defs for this file
     const fileDefs = FileDefs[fileRel.toLowerCase()];
 
-    if(!fileDefs){
-      console.log("No build def for "+fileRel);
+    if (!fileDefs) {
+      console.log("No build def for " + fileRel);
       return;
     }
 
     const updates = [];
     let extra = "";
-    
+
     const fileStat = {
       file: fileRel,
       classes: [],
@@ -294,25 +294,24 @@ walk(SrcPath, function (err, results) {
     const foundClasses = findClasses(str);
     const classSet = new Set(foundClasses.map((f) => f.class));
     fileStat.classes = [...classSet];
-    
+
     // check the class definitions we expect in this file
-    for(const [,def] of Object.entries(fileDefs)){
-   
-      if(def.mode === "class"){
+    for (const [, def] of Object.entries(fileDefs)) {
+      if (def.mode === "class") {
         // any class specific changes
-      } else if(def.mode === "func") {
+      } else if (def.mode === "func") {
         // any function specific changes
       } else {
-        console.warn("No mode for "+def.name);
+        console.warn("No mode for " + def.name);
       }
 
       const attrs = getAllAttrs(def);
-      extra += `PROXY.init(${def.name},`+ JSON.stringify(attrs) +`);` + EOL;
+      extra += `PROXY.init(${def.name},` + JSON.stringify(attrs) + `);` + EOL;
 
-      if(def.export){
+      if (def.export) {
         // do the export replace
         // see if we can find the export statement for the class/func
-        // const exportInfo = FindExport(str,def.name);       
+        // const exportInfo = FindExport(str,def.name);
         // if(exportInfo){
         //   let exportStr = "export function wrap_"+def.name+"(){ return PROXY.wrap("+def.name+",arguments); }" + EOL;
         //   updates.push({
@@ -325,24 +324,36 @@ walk(SrcPath, function (err, results) {
         // } else if(def.export){
         //   console.warn("Failed to find expected export for "+def.name);
         //   throw "export missing";
-        // }   
+        // }
         // const exportInfo = FindExport(str,def.name);
-        exports.set(def.name,fileRel);
-        if(def.mode === "class"){
-        /*
+        exports.set(def.name, fileRel);
+        if (def.mode === "class") {
+          /*
         class wrap_CC extends CC {
           constructor(){
             wrapF(()=>super(...arguments));
           }
         }    
         */
-          extra += "export class wrap_"+def.name+" extends "+def.name+"{ constructor(){ PROXY.wrapC(()=>super(...arguments)); }}" + EOL;   
+          extra +=
+            "export class wrap_" +
+            def.name +
+            " extends " +
+            def.name +
+            "{ constructor(){ PROXY.wrapC(()=>super(...arguments)); }}" +
+            EOL;
         } else {
-          extra += "export function wrap_"+def.name+"(){ return PROXY.wrapF("+def.name+",arguments); }" + EOL;   
+          extra +=
+            "export function wrap_" +
+            def.name +
+            "(){ return PROXY.wrapF(" +
+            def.name +
+            ",arguments); }" +
+            EOL;
         }
       }
     }
-   
+
     ////////////////////////////////////////////////////
     ////////////// WRAP NEW INSTANTIATES ///////////////
 
@@ -352,9 +363,9 @@ walk(SrcPath, function (err, results) {
       // find all the new instatiations of classes
       // modify them for classes we want to wrap
       let matches = str.matchAll(NewRegex);
-      for(const m of matches) {
+      for (const m of matches) {
         const found = m[1],
-          nn = m[0].indexOf('new'),
+          nn = m[0].indexOf("new"),
           index = m.index + nn,
           len = m[0].length - nn;
         if (ignore.find((i) => i === found)) {
@@ -378,24 +389,24 @@ walk(SrcPath, function (err, results) {
           continue;
         }
 
-        function defaultNewContext(cls,index){
+        function defaultNewContext(cls, index) {
           // try to 'guess' the class the new is located in
           let loc = pickClass(foundClasses, index)?.class;
           let ctxt = fileRule.newContext?.(cls, index, loc);
-          if(ctxt) return ctxt;
-          if(!loc) loc = fileNameOnly;
+          if (ctxt) return ctxt;
+          if (!loc) loc = fileNameOnly;
           //return `{c:${cls},t:this,w:${loc}}`;// too many this problems..
           return `{c:${cls},w:'${loc}'}`;
         }
 
-        const ctxtCode = defaultNewContext(found,index);
-        const callCode = "new PROXY.internal("+ctxtCode+",";
+        const ctxtCode = defaultNewContext(found, index);
+        const callCode = "new PROXY.internal(" + ctxtCode + ",";
         news.add(found);
         //updates.push({ index, length: 0, replace: creationPrefix });
         updates.push({
           index,
-          length: len,// os-index,//found.length,
-          replace: callCode,// method.name,
+          length: len, // os-index,//found.length,
+          replace: callCode, // method.name,
         });
 
         stat.count++;
@@ -421,7 +432,9 @@ walk(SrcPath, function (err, results) {
           str.substring(u.index + u.length);
       });
 
-      const relPath = path.relative(fileDir, HomePath + ImportFilePathRel).replace(/\\/g, "/");
+      const relPath = path
+        .relative(fileDir, HomePath + ImportFilePathRel)
+        .replace(/\\/g, "/");
       let header = "";
       header += "Classes:" + fileStat.classes.join(",");
       header += " Uses:" + [...news].join(",");
@@ -435,8 +448,7 @@ walk(SrcPath, function (err, results) {
 
       //if (fileCount < 30)
       //if (fileName === "WebGLRenderTarget.js") {
-      if(WriteFiles)
-        writeFileSync(file, text);
+      if (WriteFiles) writeFileSync(file, text);
       //}
 
       //throw new Error("STOP");
@@ -456,31 +468,31 @@ walk(SrcPath, function (err, results) {
   // NOTE: also need to add this to top of src/Three.js
   // export { PROXY } from "./345/system.js";
 
-
   //////////////////////////////////////////////////////////
   ///////////// MODIFY EXPORT/BUILD FILE ///////////////////
 
   // do the exports file
   let str = readFileSync(BuildFile).toString();
 
-  // add our header 
+  // add our header
   let exportHeader = FileHeader + EOL;
-  exportHeader += "export { PROXY, MM } from \"./345/system.js\";"+EOL+EOL;
+  exportHeader += 'export { PROXY, MM } from "./345/system.js";' + EOL + EOL;
 
   // search the exports for those matching ones
   // we will override... change them
   let exportFooter = EOL + FileHeader + " OVERRIDES" + EOL;
   const updates = [];
-  exports.forEach((path,n)=>{
+  exports.forEach((path, n) => {
     const exp = FindExport(str, n);
-    if(exp){
+    if (exp) {
       updates.push({
-        index:exp.index,
-        length:exp.length,
-        replace:"export { wrap_"+n+" as "+n+" }"
+        index: exp.index,
+        length: exp.length,
+        replace: "export { wrap_" + n + " as " + n + " }",
       });
     } else {
-      exportFooter += "export { wrap_" + n + " as " + n + " } from \"./"+path+"\";" + EOL;
+      exportFooter +=
+        "export { wrap_" + n + " as " + n + ' } from "./' + path + '";' + EOL;
     }
   });
 
@@ -488,14 +500,11 @@ walk(SrcPath, function (err, results) {
   updates.sort((a, b) => b.index - a.index);
   updates.forEach((u) => {
     str =
-      str.substring(0, u.index) +
-      u.replace +
-      str.substring(u.index + u.length);
-  });  
+      str.substring(0, u.index) + u.replace + str.substring(u.index + u.length);
+  });
 
   let exportAll = exportHeader + str + exportFooter;
 
   // save the exports file
-  if(WriteFiles)
-    writeFileSync(BuildFile, exportAll);
+  if (WriteFiles) writeFileSync(BuildFile, exportAll);
 });
