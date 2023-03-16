@@ -66,13 +66,14 @@ import {
 
 class GLTFLoader extends Loader {
 
-	constructor( manager ) {
+	constructor( manager, factory ) {
 
 		super( manager );
 
 		this.dracoLoader = null;
 		this.ktx2Loader = null;
 		this.meshoptDecoder = null;
+		this.factory = factory;
 
 		this.pluginCallbacks = [];
 
@@ -311,7 +312,8 @@ class GLTFLoader extends Loader {
 			requestHeader: this.requestHeader,
 			manager: this.manager,
 			ktx2Loader: this.ktx2Loader,
-			meshoptDecoder: this.meshoptDecoder
+			meshoptDecoder: this.meshoptDecoder,
+			factory: this.factory
 
 		} );
 
@@ -3338,9 +3340,17 @@ class GLTFParser {
 						primitive.mode === undefined ) {
 
 					// .isSkinnedMesh isn't in glTF spec. See ._markDefs()
-					mesh = meshDef.isSkinnedMesh === true
-						? new SkinnedMesh( geometry, material )
-						: new Mesh( geometry, material );
+
+					if (meshDef.isSkinnedMesh === true) {
+						mesh = new SkinnedMesh( geometry, material );
+					} else if (parser.options && parser.options.factory && parser.options.factory.Mesh) {
+						mesh = parser.options.factory.Mesh( geometry, material );
+					} else {
+						mesh = new Mesh( geometry, material );
+					}
+					// mesh = meshDef.isSkinnedMesh === true
+					// 	? new SkinnedMesh( geometry, material )
+					// 	: new Mesh( geometry, material );
 
 					if ( mesh.isSkinnedMesh === true && ! mesh.geometry.attributes.skinWeight.normalized ) {
 
