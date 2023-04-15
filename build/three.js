@@ -54,13 +54,13 @@
 		};
 	}
 
-	function* mmClean() {
-		if (mmGuard) return -1; // dispose on anything not up to latest mark
+	function* mmClean(d = 1) {
+		if (mmGuard) return -1; // dispose on anything not marked recently
 
 		let c = 0;
 
 		for (const o of mmSet) {
-			if (o.__mmc !== mmc) {
+			if (mmc - o.__mmc > d) {
 				o.__disposeFinal?.();
 				mmSet.delete(o);
 				c++;
